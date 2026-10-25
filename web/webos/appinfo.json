@@ -1,0 +1,14 @@
+{
+  "id": "dev.housecontrol.webos",
+  "version": "0.1.0",
+  "vendor": "House Control contributors",
+  "type": "web",
+  "main": "index.html",
+  "title": "House Control Demo",
+  "appDescription": "Standalone 3D floor-plan demo. No real-device control.",
+  "icon": "icon.png",
+  "resolution": "1920x1080",
+  "requiredACG": [],
+  "disableBackHistoryAPI": true,
+  "supportGIP": true
+}
