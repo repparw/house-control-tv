@@ -3,7 +3,7 @@ import { createElement, House, Settings2, ChevronLeft, ChevronRight, Lightbulb, 
 import QRCode from 'qrcode';
 import { normalize } from './vendor/config.js';
 import { createWorld } from './vendor/three/world.js';
-import { api, nativeConfig, remoteURL } from './api.js';
+import { api, nativeConfig, remoteURL, webosDemo } from './api.js';
 import { ABOUT, DONATIONS, SUPPORT_INTRO } from './support.js';
 
 const app = document.querySelector('#app');
@@ -197,7 +197,7 @@ let modalCleanup = null;
 function closeModal(){modalCleanup?.();modalCleanup=null;modal?.remove();modal=null;lastFocus?.focus();}
 function infoButtons(){return [button('About','Info',()=>openInfo('about'),'secondary'),button('Support the author','HandHeart',()=>openInfo('support'),'secondary')];}
 // The TV's WebView only shows bundled pages, so links are text (and a QR) there; the phone companion gets real links.
-function link(url){const text=url.replace(/^https:\/\//,'');if(nativeConfig)return el('span','about-link',text);const a=el('a','about-link',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
+function link(url){const text=url.replace(/^https:\/\//,'');if(nativeConfig||webosDemo)return el('span','about-link',text);const a=el('a','about-link',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 function qr(value,size){const c=el('canvas','info-qr');c.setAttribute('aria-hidden','true');QRCode.toCanvas(c,value,{width:size,margin:2,errorCorrectionLevel:'M',color:{dark:'#0a0e1a',light:'#ffffff'}}).catch(()=>c.remove());return c;}
 function openInfo(kind){
   const from=lastFocus;if(modal)closeModal();lastFocus=from;
@@ -218,6 +218,7 @@ function openInfo(kind){
   modal.append(panel);document.body.append(modal);back.focus();
 }
 async function openSync(){
+  if (webosDemo) return openWebosDemo();
   if(bundle?.mode==='demo'){
     lastFocus=document.activeElement;modal=el('div','modal-backdrop');const panel=el('section','sync-panel');panel.append(el('p','eyebrow','ISOLATED DEMO'),el('h2','','A home you can safely explore'),el('p','sync-description','This demo has no real-device bindings. All switches and scenes affect the demo model only.'),button('Back to demo','ArrowLeft',closeModal,'primary'),button('Reset demo','RefreshCw',()=>switchDemo(true),'secondary'),button('Return to my home','House',()=>switchDemo(false),'secondary'),...infoButtons());modal.append(panel);document.body.append(modal);panel.querySelector('button').focus();return;
   }
@@ -231,6 +232,23 @@ async function openSync(){
   else text.append(el('p','','Connect your TV by running ./house-tv/deploy.py on your Mac.'));
   panel.append(content,el('div','sync-state',demo?'Demonstration home':online?'Connected to Mac · refreshes every 2 seconds':'Mac is offline. Showing your last saved home.'));
   modal.append(panel);document.body.append(modal);close.focus();
+}
+function openWebosDemo() {
+  lastFocus=document.activeElement;modal=el('div','modal-backdrop');
+  const panel=el('section','sync-panel');
+  panel.append(el('h2','','House Control for webOS'),el('p','sync-description','Isolated demo. Imported device bindings are inactive. No Home Assistant credentials or real-device commands are used.'));
+  const file=el('input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','Import floor plan JSON');
+  const message=el('p','sync-note');
+  file.onchange=async()=>{
+    if (!file.files?.[0]) return;
+    try {
+      if (file.files[0].size > 512*1024) throw new Error('Floor plan must be smaller than 512 KiB.');
+      await api('/api/import',JSON.parse(await file.files[0].text()));
+      closeModal();world?.dispose();config=null;room='all';await boot();
+    } catch(error) { message.textContent=error.message; }
+  };
+  panel.append(file,message,button('Back to demo','ArrowLeft',closeModal,'primary'),button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
+  modal.append(panel);document.body.append(modal);panel.querySelector('button').focus();
 }
 async function switchDemo(enabled){await api('/api/demo',{enabled});closeModal();world?.dispose();config=null;await boot();}
 async function openStandaloneSync() {
@@ -383,7 +401,9 @@ function back(){
 }
 window.tvBack=()=>{if(!back())window.HouseTV?.exit();};
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'||e.key==='BrowserBack'){e.preventDefault();back();return;}
+  if(e.key==='Escape'||e.key==='BrowserBack'||(webosDemo&&e.keyCode===461)){
+    e.preventDefault();if(!back()&&webosDemo)window.close();return;
+  }
   if(orbiting&&!modal){if(e.key.startsWith('Arrow')){e.preventDefault();world?.orbit(e.key==='ArrowLeft'?-4:e.key==='ArrowRight'?4:0,e.key==='ArrowUp'?3:e.key==='ArrowDown'?-3:0);}if(e.key==='Enter'){e.preventDefault();back();}return;}
   if(e.key.startsWith('Arrow')){e.preventDefault();navigate(e.key);}
 });
@@ -399,10 +419,11 @@ function showSetup(error){
 async function boot(){
   try {const next=await api('/api/home');config=normalize(next.plan);bundle=next;online=!!(next.controlReady ?? next.macOnline);store.state=next.state;render();apply(next);}
   catch(error){console.warn('TV_BOOT',error.message);let cached;try{cached=JSON.parse(localStorage.getItem('house-tv:last-home:v1'));}catch{}if(cached){config=normalize(cached.plan);bundle=cached;store.state=cached.state;online=false;render();toast('Showing your saved home. Open Sync & connect to check the TV connection.');}else showSetup(error);}
-  setTimeout(poll,1800);
+  clearTimeout(pollTimer);pollTimer=setTimeout(poll,1800);
 }
+let pollTimer;
 async function poll(){
   if(!demo&&!document.hidden&&!busy)try{const next=await api('/api/home');if(!config||bundle?.revision!==next.revision){world?.dispose();room='all';config=normalize(next.plan);store.state=next.state;bundle=next;online=!!(next.controlReady ?? next.macOnline);render();}apply(next);}catch(error){if(online)console.warn('TV_CONNECTION',error.message);online=false;update();}
-  setTimeout(poll,1800);
+  pollTimer=setTimeout(poll,1800);
 }
 boot();

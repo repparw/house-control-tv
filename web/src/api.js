@@ -1,3 +1,5 @@
+import { webosAPI } from './webos.js';
+export const webosDemo = import.meta.env.MODE === 'webos';
 const native = window.HouseTV;
 export const nativeConfig = native ? JSON.parse(native.getConfig()) : null;
 let token = nativeConfig?.token || sessionStorage.getItem('house-tv:key') || '';
@@ -22,6 +24,7 @@ window.__tvReply = (id, response) => {
   if (response.error) p.reject(new Error(response.error)); else p.resolve(response);
 };
 export async function api(path, body) {
+  if (webosDemo) return webosAPI(path, body);
   if (native) return new Promise((resolve, reject) => {
     const id = ++counter;
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('The TV is still waiting for the device service. Try again.')); }, 65000);
