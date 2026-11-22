@@ -31,7 +31,7 @@ test('imported bindings remain isolated while scenes and demo reset work', async
   const scene = current.plan.scenes[0];
   const applied = await webosAPI('/api/demo/action', { kind: 'scene', id: scene.id });
   assert.equal(applied.home.state.scene, scene.id);
-  await assert.rejects(webosAPI('/api/action', { kind: 'light', id, on: true }), /disabled/);
+  await assert.rejects(webosAPI('/api/action', { kind: 'light', id, on: true }), /Connect Home Assistant/);
   await assert.rejects(webosAPI('/api/import', { rooms: [] }));
   assert.equal((await webosAPI('/api/home')).plan.name, imported.name);
   await webosAPI('/api/import', { plan: imported });
