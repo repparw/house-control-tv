@@ -56,7 +56,7 @@ test('rejects unsupported providers before running a scene', async () => {
   await webosAPI('/api/import', plan);
   await webosAPI('/api/webos/ha/connect', { url: '192.168.0.20', token: 'x'.repeat(40) });
   const before = FakeSocket.last.sent.length;
-  await assert.rejects(webosAPI('/api/action', { kind: 'scene', id: plan.scenes[0].id }), /unsupported provider/);
+  await assert.rejects(webosAPI('/api/action', { kind: 'scene', id: plan.scenes.at(-1).id }), /unsupported provider/);
   assert.equal(FakeSocket.last.sent.slice(before).filter(m => m.type === 'call_service').length, 0);
   await webosAPI('/api/webos/ha/disconnect', {});
 });
