@@ -5,6 +5,10 @@ const KEY = 'house-control:webos:demo:v1';
 let home;
 let ha = null;
 let haAddress = '';
+let haCredentials = null;
+let haGeneration = 0;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
 const haStates = new Map();
 
 function makeHome(plan) {
@@ -43,7 +47,7 @@ function refreshLinkedStates() {
       const reading = haReading(haStates.get(link.id));
       const patch = reading?.[section === 'lights' ? 'light' : 'ac'];
       if (patch) Object.assign(home.state[section][device.id], patch);
-      if (reading) home.state[section][device.id].online = reading.online;
+      home.state[section][device.id].online = reading?.online === true;
       if (section === 'acs' && device.sensor?.service === 'homeassistant') {
         const sensor = haReading(haStates.get(device.sensor.id));
         if (Number.isFinite(sensor?.temperature)) home.state.acs[device.id].roomTemp = sensor.temperature;
@@ -57,32 +61,112 @@ function setHAState(state) {
   refreshLinkedStates();
 }
 
-async function connectHA(body) {
-  if (!body || typeof body.url !== 'string' || typeof body.token !== 'string')
-    throw new Error('Enter the server address and access token.');
+function setConnectionStatus(ready, label) {
+  if (!home) return;
+  home.mode = 'standalone';
+  home.controlReady = ready;
+  home.macOnline = ready;
+  home.connectionLabel = label;
+  if (!ready) {
+    for (const section of ['lights', 'acs']) {
+      for (const device of normalize(home.plan)[section]) {
+        if (linkOf(device)?.service === 'homeassistant')
+          home.state[section][device.id].online = false;
+      }
+    }
+  }
+}
+
+function cancelReconnect() {
+  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function queueReconnect(generation) {
+  if (generation !== haGeneration || !haCredentials || reconnectTimer !== null) return;
+  const delay = Math.min(30000, 1000 * 2 ** Math.min(reconnectAttempt++, 5));
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    if (generation !== haGeneration || !haCredentials) return;
+    try {
+      await startHA(generation);
+    } catch (error) {
+      if (generation !== haGeneration) return;
+      if (/rejected the token/.test(error.message)) {
+        haCredentials = null;
+        setConnectionStatus(false, 'Home Assistant authorization expired. Reconnect in Sync & connect.');
+        return;
+      }
+      setConnectionStatus(false, 'Home Assistant offline. Retrying connection.');
+      queueReconnect(generation);
+    }
+  }, delay);
+}
+
+async function startHA(generation) {
   const previous = ha;
-  ha = null; previous?.close(); haStates.clear();
   const client = new HAConnection();
+  ha = client;
+  previous?.close();
+  haStates.clear();
+  let established = false;
   let info;
   try {
-    info = await client.connect(body.url, body.token, setHAState, () => {
-      if (ha === client) { home.controlReady = false; home.connectionLabel = 'Home Assistant disconnected'; }
+    info = await client.connect(haCredentials.url, haCredentials.token, state => {
+      if (ha === client && generation === haGeneration) setHAState(state);
+    }, () => {
+      if (!established || ha !== client || generation !== haGeneration) return;
+      setConnectionStatus(false, 'Home Assistant disconnected. Reconnecting.');
+      queueReconnect(generation);
     });
-  } catch (error) { client.close(); throw error; }
-  ha = client; haAddress = info.url;
-  home.mode = 'standalone'; home.controlReady = true; home.macOnline = true;
-  home.connectionLabel = 'Home Assistant connected';
+  } catch (error) {
+    client.close();
+    if (ha === client) ha = null;
+    throw error;
+  }
+  if (generation !== haGeneration || ha !== client) {
+    client.close();
+    throw new Error('Connection was cancelled.');
+  }
+  established = true;
+  haAddress = info.url;
+  reconnectAttempt = 0;
+  cancelReconnect();
+  setConnectionStatus(true, 'Home Assistant connected');
   refreshLinkedStates();
   return { connected: true, url: haAddress };
 }
 
+async function connectHA(body) {
+  if (!body || typeof body.url !== 'string' || typeof body.token !== 'string')
+    throw new Error('Enter the server address and access token.');
+  const generation = ++haGeneration;
+  cancelReconnect();
+  ha?.close(); ha = null; haStates.clear(); haAddress = '';
+  haCredentials = { url: body.url, token: body.token };
+  try {
+    return await startHA(generation);
+  } catch (error) {
+    if (haGeneration === generation) {
+      haCredentials = null;
+      setConnectionStatus(false, 'Home Assistant is not connected');
+    }
+    throw error;
+  }
+}
+
 function disconnectHA() {
+  ++haGeneration;
+  cancelReconnect();
+  haCredentials = null;
   ha?.close(); ha = null; haAddress = ''; haStates.clear();
   home.mode = 'demo'; home.controlReady = true; home.macOnline = false;
   delete home.connectionLabel;
   return { connected: false };
 }
-function statusHA() { return { connected: !!ha?.connected, url: haAddress }; }
+function statusHA() {
+  return { connected: !!ha?.connected, reconnecting: !!haCredentials && !ha?.connected, url: haAddress };
+}
 
 function demoAction(body) {
   const s = home.state, config = normalize(home.plan);
@@ -183,8 +267,7 @@ export async function webosAPI(path, body) {
     localStorage.setItem(KEY, JSON.stringify(plan));
     home = next;
     if (ha?.connected) {
-      home.mode = 'standalone'; home.controlReady = true; home.macOnline = true;
-      home.connectionLabel = 'Home Assistant connected'; refreshLinkedStates();
+      setConnectionStatus(true, 'Home Assistant connected'); refreshLinkedStates();
     }
     return { ok: true };
   }

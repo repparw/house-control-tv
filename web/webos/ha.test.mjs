@@ -66,6 +66,39 @@ test('authenticates, reads states, listens for updates and calls services', asyn
   assert.equal(client.connected, false);
 });
 
+test('buffers updates during get_states and uses the newest timestamp', async () => {
+  class RacingSocket extends FakeSocket {
+    send(text) {
+      const msg = JSON.parse(text);
+      this.sent.push(msg);
+      if (msg.type === 'auth') queueMicrotask(() => this.emit({ type: 'auth_ok' }));
+      else if (msg.type === 'subscribe_events') queueMicrotask(() => this.emit({
+        id: msg.id, type: 'result', success: true, result: null,
+      }));
+      else if (msg.type === 'get_states') queueMicrotask(() => {
+        const id = this.sent.find(x => x.type === 'subscribe_events').id;
+        this.emit({ type: 'event', id, event: { data: {
+          entity_id: 'light.kitchen',
+          new_state: { entity_id: 'light.kitchen', state: 'off', last_updated: '2026-11-22T18:03:00Z' },
+        } } });
+        this.emit({ id: msg.id, type: 'result', success: true, result: [
+          { entity_id: 'light.kitchen', state: 'on', last_updated: '2026-11-22T18:02:00Z' },
+        ] });
+      });
+    }
+  }
+  const seen = [];
+  const client = new HAConnection(RacingSocket);
+  await client.connect('192.168.0.20', 'a'.repeat(40), state => seen.push(state));
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].state, 'off');
+  RacingSocket.last.emit({ type: 'event', id: client.subscriptionId, event: {
+    data: { entity_id: 'light.kitchen', new_state: null },
+  } });
+  assert.equal(seen.at(-1).state, 'unavailable');
+  client.close();
+});
+
 test('rejects commands when the socket closes', async () => {
   const client = new HAConnection(FakeSocket);
   await client.connect('192.168.0.20', 'a'.repeat(40), () => {});

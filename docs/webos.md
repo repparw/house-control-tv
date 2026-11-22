@@ -5,7 +5,7 @@ This branch ports the upstream Three.js TV interface to a standalone webOS appli
 ## Status
 
 - Tested on an LG C3 with webOS 11.2.0: 3D demo renders with WebGL 2, floor-plan import, D-pad, OK, Back, and Magic Remote pointer. Luma hides and suspends the separate app correctly.
-- Implemented but **not yet tested on the TV**: direct Home Assistant WebSocket authentication, live light/switch/climate state, scene/device actions, and disconnection handling.
+- Implemented but **not yet tested on the TV**: direct Home Assistant WebSocket authentication, live light/switch/climate state, scene/device actions, and automatic reconnect after connection loss.
 - Not ported: persistent secure credentials, Smart Life/Tuya, Hue, the phone companion, Mac auto-sync, and Luma's live Home-screen widget. Existing plans and upstream scene format remain supported.
 
 ## Build

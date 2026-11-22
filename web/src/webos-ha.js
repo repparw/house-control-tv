@@ -31,6 +31,7 @@ export class HAConnection {
     this.onState = () => {};
     this.onDisconnect = () => {};
     this.subscriptionId = null;
+    this.staged = null;
   }
 
   async connect(address, token, onState, onDisconnect = () => {}) {
@@ -42,6 +43,7 @@ export class HAConnection {
     this.onDisconnect = onDisconnect;
     this.nextId = 0;
     this.connected = false;
+    this.staged = null;
     const wsURL = url.replace(/^http/, 'ws') + '/api/websocket';
     const socket = new this.Socket(wsURL);
     this.ws = socket;
@@ -72,8 +74,13 @@ export class HAConnection {
           else p.reject(new Error(msg.error?.message || 'Home Assistant rejected the request.'));
         }
       } else if (msg.type === 'event' && msg.id === this.subscriptionId) {
-        const state = msg.event?.data?.new_state;
-        if (state) this.onState(state);
+        const changed = msg.event?.data;
+        const entityId = changed?.entity_id;
+        if (typeof entityId !== 'string') return;
+        // A deleted entity is unavailable, not permanently stuck in its previous state.
+        const state = changed.new_state ?? { entity_id: entityId, state: 'unavailable', attributes: {} };
+        if (this.staged) this.staged.set(entityId, state);
+        else this.onState(state);
       }
     };
     socket.onerror = () => { complete(new Error('Cannot open the Home Assistant WebSocket.')); };
@@ -86,12 +93,25 @@ export class HAConnection {
     };
     try {
       await authenticated;
-      const states = await this.request('get_states');
-      for (const state of states) this.onState(state);
+      // Subscribe before reading the snapshot so changes cannot be missed at startup.
       const subscription = this.request('subscribe_events', { event_type: 'state_changed' });
-      // Events can begin arriving immediately; use the request ID before awaiting its acknowledgment.
       this.subscriptionId = this.nextId;
       await subscription;
+      this.staged = new Map();
+      const states = await this.request('get_states');
+      if (!Array.isArray(states)) throw new Error('Home Assistant returned an invalid state snapshot.');
+      const latest = new Map(states.filter(s => s?.entity_id).map(s => [s.entity_id, s]));
+      for (const [id, event] of this.staged) {
+        const previous = latest.get(id);
+        // Home Assistant state objects carry last_updated timestamps. A snapshot
+        // newer than a queued event must not be overwritten by that older event.
+        const oldTime = Date.parse(previous?.last_updated);
+        const newTime = Date.parse(event.last_updated);
+        if (!previous || !Number.isFinite(oldTime) || !Number.isFinite(newTime) || newTime >= oldTime)
+          latest.set(id, event);
+      }
+      for (const state of latest.values()) this.onState(state);
+      this.staged = null;
       this.connected = true;
       return { url };
     } catch (error) {
@@ -122,7 +142,7 @@ export class HAConnection {
 
   close() {
     const socket = this.ws;
-    this.ws = null; this.connected = false; this.subscriptionId = null;
+    this.ws = null; this.connected = false; this.subscriptionId = null; this.staged = null;
     if (socket) { socket.onclose = null; socket.close(); }
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Home Assistant disconnected.')); }
     this.pending.clear();

@@ -40,6 +40,14 @@ test('imported HA-linked light uses the live WebSocket and never saves credentia
   assert.equal(current.mode, 'standalone');
   assert.equal(current.state.lights[imported.lights[0].id].on, false);
   assert.equal(current.controlReady, true);
+  FakeSocket.last.close();
+  const afterDisconnect = await webosAPI('/api/home');
+  assert.equal(afterDisconnect.controlReady, false);
+  assert.equal(afterDisconnect.state.lights[imported.lights[0].id].online, false);
+  assert.equal((await webosAPI('/api/webos/ha/status')).reconnecting, true);
+  await webosAPI('/api/webos/ha/disconnect', {});
+  await webosAPI('/api/webos/ha/connect', { url: '192.168.0.20', token });
+  assert.equal((await webosAPI('/api/webos/ha/status')).connected, true);
   await webosAPI('/api/action', { kind: 'light', id: imported.lights[0].id, on: true });
   const command = FakeSocket.last.sent.find(m => m.type === 'call_service');
   assert.equal(command.service, 'turn_on');

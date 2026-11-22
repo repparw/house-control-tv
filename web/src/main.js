@@ -241,8 +241,8 @@ async function openWebosDemo() {
   const haStatus=await api('/api/webos/ha/status');
   panel.append(el('h2','','House Control for webOS'),
     el('p','sync-description','Import your floor plan and connect directly to Home Assistant. Smart Life and Hue connections are not ported yet.'));
-  if (haStatus.connected) {
-    panel.append(el('p','sync-state','Home Assistant connected · '+haStatus.url));
+  if (haStatus.connected || haStatus.reconnecting) {
+    panel.append(el('p','sync-state',haStatus.connected?'Home Assistant connected · '+haStatus.url:'Home Assistant offline · reconnecting automatically'));
     panel.append(button('Disconnect Home Assistant','Power',async()=>{
       try {await api('/api/webos/ha/disconnect',{});closeModal();world?.dispose();config=null;room='all';await boot();}
       catch(error){message.textContent=error.message;}
