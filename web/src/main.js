@@ -233,12 +233,38 @@ async function openSync(){
   panel.append(content,el('div','sync-state',demo?'Demonstration home':online?'Connected to Mac · refreshes every 2 seconds':'Mac is offline. Showing your last saved home.'));
   modal.append(panel);document.body.append(modal);close.focus();
 }
-function openWebosDemo() {
+async function openWebosDemo() {
   lastFocus=document.activeElement;modal=el('div','modal-backdrop');
+  modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','House Control connections');
   const panel=el('section','sync-panel');
-  panel.append(el('h2','','House Control for webOS'),el('p','sync-description','Isolated demo. Imported device bindings are inactive. No Home Assistant credentials or real-device commands are used.'));
+  const message=el('p','sync-note');message.setAttribute('role','status');
+  const haStatus=await api('/api/webos/ha/status');
+  panel.append(el('h2','','House Control for webOS'),
+    el('p','sync-description','Import your floor plan and connect directly to Home Assistant. Smart Life and Hue connections are not ported yet.'));
+  if (haStatus.connected) {
+    panel.append(el('p','sync-state','Home Assistant connected · '+haStatus.url));
+    panel.append(button('Disconnect Home Assistant','Power',async()=>{
+      try {await api('/api/webos/ha/disconnect',{});closeModal();world?.dispose();config=null;room='all';await boot();}
+      catch(error){message.textContent=error.message;}
+    },'secondary'));
+  } else {
+    const form=el('div','login-form');
+    const addressLabel=el('label','','Home Assistant URL');
+    const address=el('input');address.type='url';address.placeholder='http://homeassistant.local:8123';
+    address.autocomplete='off';addressLabel.append(address);
+    const tokenLabel=el('label','','Long-lived access token');
+    const token=el('input');token.type='password';token.autocomplete='off';tokenLabel.append(token);
+    const connect=button('Connect Home Assistant','Check',async()=>{
+      connect.disabled=true;message.textContent='Connecting to Home Assistant…';
+      try {
+        await api('/api/webos/ha/connect',{url:address.value,token:token.value});
+        token.value='';closeModal();world?.dispose();config=null;room='all';await boot();
+      } catch(error) { message.textContent=error.message;connect.disabled=false; }
+    },'primary');
+    form.append(addressLabel,tokenLabel,connect);
+    panel.append(form,el('p','sync-note','The token stays in app memory and must be re-entered after restarting. It is never stored in the floor plan. Use HTTPS for remote servers.'));
+  }
   const file=el('input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','Import floor plan JSON');
-  const message=el('p','sync-note');
   file.onchange=async()=>{
     if (!file.files?.[0]) return;
     try {
@@ -247,8 +273,10 @@ function openWebosDemo() {
       closeModal();world?.dispose();config=null;room='all';await boot();
     } catch(error) { message.textContent=error.message; }
   };
-  panel.append(file,message,button('Back to demo','ArrowLeft',closeModal,'primary'),button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
-  modal.append(panel);document.body.append(modal);panel.querySelector('button').focus();
+  panel.append(el('p','sync-note','Import floor plan JSON'),file,message,
+    button('Back to home','ArrowLeft',closeModal,'secondary'),
+    button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
+  modal.append(panel);document.body.append(modal);panel.querySelector('button')?.focus();
 }
 async function switchDemo(enabled){await api('/api/demo',{enabled});closeModal();world?.dispose();config=null;await boot();}
 async function openStandaloneSync() {
