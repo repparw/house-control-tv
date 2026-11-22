@@ -20,3 +20,10 @@ jobs:
       - run: npm ci
       - run: node --test webos/*.test.mjs
       - run: npm run build:webos
+      - run: npx --yes --package=@webos-tools/cli@3.2.6 ares-package dist --outdir ../.local/webos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: house-control-webos-ipk
+          path: .local/webos/*.ipk
+          if-no-files-found: error
+          retention-days: 7

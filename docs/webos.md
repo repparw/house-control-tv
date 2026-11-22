@@ -16,10 +16,10 @@ From `web/` with Node 24:
 npm ci
 node --test webos/*.test.mjs
 npm run build:webos
-npx --package @webos-tools/cli ares-package dist --outdir ../.local/webos
+npx --yes --package=@webos-tools/cli@3.2.6 ares-package dist --outdir ../.local/webos
 ```
 
-Install the resulting IPK using Developer Mode / the webOS CLI. The app does not use privileged Luna calls and does not alter LG Home or Luma.
+The CI workflow also uploads a downloadable `house-control-webos-ipk` artifact for every successful build. On unrooted TVs, use LG Developer Mode and the webOS CLI to install it. **On an already rooted TV, do not enable the LG Developer Mode app without checking the webOS Homebrew guidance**, because that can interfere with root. Install using the existing rooted management/SSH setup instead. The standalone application does not require root or alter LG Home or Luma.
 
 ## Connect Home Assistant
 
@@ -28,7 +28,7 @@ Install the resulting IPK using Developer Mode / the webOS CLI. The app does not
 3. Live state and commands use Home Assistant's `/api/websocket` endpoint. Existing House Control scenes still apply desired device states using HA service calls.
 4. To return to the isolated demo, choose Disconnect or Reset. No real-device command is sent by the demo adapter.
 
-**Security and current limitations:** The token is kept only in TV-app memory, not in the floor plan or browser storage. Restarting the app requires signing in again. This is intentionally not a finished credential-management solution. The next stage must evaluate an app-private webOS JS service for secure persistence, without requiring root. Plain HTTP is limited to private IPv4 and `.local` addresses; use HTTPS elsewhere. Some HA deployments may reject a WebSocket opened from a packaged webOS app; test on a physical TV before relying on this feature. Do not use this experimental build for security-sensitive automations.
+**Security and current limitations:** The token is kept only in TV-app memory, not in the floor plan or browser storage. Restarting the app requires signing in again. This is intentionally not a finished credential-management solution. The next stage must evaluate LG's keymanager3 API (available on webOS TV 24+) or an app-private webOS JS service for secure persistence, without requiring root. Plain HTTP is limited to private IPv4 and `.local` addresses; use HTTPS elsewhere. Some HA deployments may reject a WebSocket opened from a packaged webOS app; test on a physical TV before relying on this feature. Do not use this experimental build for security-sensitive automations.
 
 Only Home Assistant-linked devices currently send real commands. Unsupported providers fail explicitly instead of silently changing the UI. Unlinked devices retain upstream's local simulated behavior.
 
