@@ -1,4 +1,6 @@
 import './style.css';
+import { createHACredentialStore } from './webos-credentials.js';
+import { createHASetupForm } from './webos-setup.js';
 import { createElement, House, Settings2, ChevronLeft, ChevronRight, Lightbulb, Power, Minus, Plus, Snowflake, Sun, Moon, Sofa, Film, DoorOpen, Wifi, Rotate3d, Check, ArrowLeft, Smartphone, RefreshCw, Info, HandHeart } from 'lucide';
 import QRCode from 'qrcode';
 import { normalize } from '@house-control/visuals';
@@ -6,6 +8,7 @@ import { createWorld } from './vendor/three/world.js';
 import { api, nativeConfig, remoteURL, webosDemo } from './api.js';
 import { ABOUT, DONATIONS, SUPPORT_INTRO } from './support.js';
 
+const credentials = webosDemo ? createHACredentialStore() : null;
 const app = document.querySelector('#app');
 const $ = (s) => document.querySelector(s);
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
@@ -244,32 +247,35 @@ async function openWebosDemo() {
   if (haStatus.connected || haStatus.reconnecting) {
     panel.append(el('p','sync-state',haStatus.connected?'Home Assistant connected · '+haStatus.url:'Home Assistant offline · reconnecting automatically'));
     panel.append(button('Disconnect Home Assistant','Power',async()=>{
-      try {await api('/api/webos/ha/disconnect',{});closeModal();world?.dispose();config=null;room='all';await boot();}
+      try {await credentials.clear();await api('/api/webos/ha/disconnect',{});closeModal();world?.dispose();config=null;room='all';await boot();}
       catch(error){message.textContent=error.message;}
     },'secondary'));
   } else {
-    const form=el('div','login-form');
-    const addressLabel=el('label','','Home Assistant URL');
-    const address=el('input');address.type='url';address.placeholder='http://homeassistant.local:8123';
-    address.autocomplete='off';addressLabel.append(address);
-    const tokenLabel=el('label','','Long-lived access token');
-    const token=el('input');token.type='password';token.autocomplete='off';tokenLabel.append(token);
-    const connect=button('Connect Home Assistant','Check',async()=>{
-      connect.disabled=true;message.textContent='Connecting to Home Assistant…';
-      try {
-        await api('/api/webos/ha/connect',{url:address.value,token:token.value});
-        token.value='';closeModal();world?.dispose();config=null;room='all';await boot();
-      } catch(error) { message.textContent=error.message;connect.disabled=false; }
-    },'primary');
-    form.append(addressLabel,tokenLabel,connect);
-    panel.append(form,el('p','sync-note','The token stays in app memory and must be re-entered after restarting. It is never stored in the floor plan. Use HTTPS for remote servers.'));
+    panel.append(createHASetupForm({
+      async connect(input) {
+        await api('/api/webos/ha/connect', input);
+        try {
+          await credentials.save(input);
+          return { persisted: true };
+        } catch {
+          return { persisted: false };
+        }
+      },
+      async onConnected({ persisted }) {
+        closeModal(); world?.dispose(); config=null; room='all'; await boot();
+        toast(persisted ? 'Connected. Credentials saved securely.' : 'Connected for this session. Protected storage unavailable.');
+      },
+    }));
   }
   const file=el('input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','Import floor plan JSON');
   file.onchange=async()=>{
     if (!file.files?.[0]) return;
     try {
       if (file.files[0].size > 512*1024) throw new Error('Floor plan must be smaller than 512 KiB.');
-      await api('/api/import',JSON.parse(await file.files[0].text()));
+      const plan = JSON.parse(await file.files[0].text());
+      normalize(plan.plan ?? plan);
+      if (!window.confirm('Replace the current floor plan with this home?')) { file.value=''; return; }
+      await api('/api/import',plan);
       closeModal();world?.dispose();config=null;room='all';await boot();
     } catch(error) { message.textContent=error.message; }
   };
@@ -278,7 +284,7 @@ async function openWebosDemo() {
     button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
   modal.append(panel);document.body.append(modal);panel.querySelector('button')?.focus();
 }
-async function switchDemo(enabled){await api('/api/demo',{enabled});closeModal();world?.dispose();config=null;await boot();}
+async function switchDemo(enabled){if(webosDemo) await credentials.clear();await api('/api/demo',{enabled});closeModal();world?.dispose();config=null;await boot();}
 async function openStandaloneSync() {
   if (modal) closeModal();
   lastFocus=document.activeElement;modal=el('div','modal-backdrop');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','TV connections');
@@ -454,4 +460,15 @@ async function poll(){
   if(!demo&&!document.hidden&&!busy)try{const next=await api('/api/home');if(!config||bundle?.revision!==next.revision){world?.dispose();room='all';config=normalize(next.plan);store.state=next.state;bundle=next;online=!!(next.controlReady ?? next.macOnline);render();}apply(next);}catch(error){if(online)console.warn('TV_CONNECTION',error.message);online=false;update();}
   pollTimer=setTimeout(poll,1800);
 }
-boot();
+boot().then(async () => {
+  if (!webosDemo) return;
+  try {
+    const saved = await credentials.load();
+    if (saved && !document.hidden) {
+      await api('/api/webos/ha/connect', saved);
+      apply(await api('/api/home'));
+    }
+  } catch {
+    toast('Could not restore the Home Assistant connection. Open Sync & connect.');
+  }
+});
