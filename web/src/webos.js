@@ -127,10 +127,11 @@ function makeHome(plan, options = {}) {
         // Local-only state survives only when the device stayed simulated and compatible.
         if (!newLink && !oldLink) copyStateFields(next.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
         // A linked display value may be retained as last-known presentation, never as authority.
-        if (oldState?.known && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
+        if (oldState && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
           copyStateFields(next.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
-          next.state[section][device.id].known = true;
-          next.state[section][device.id].stale = true;
+          const state = next.state[section][device.id];
+          state.displayName = oldState.displayName;
+          state.known = state.stale = oldState.known === true;
         }
       }
     }
@@ -160,10 +161,11 @@ function restoreCachedState() {
       const newLink = linkOf(device);
       if (!newLink && !oldLink) {
         copyStateFields(home.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
-      } else if (oldState?.known && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
+      } else if (oldState && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
         copyStateFields(home.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
-        home.state[section][device.id].known = true;
-        home.state[section][device.id].stale = true;
+        const state = home.state[section][device.id];
+        state.displayName = oldState.displayName;
+        state.known = state.stale = oldState.known === true;
       }
     }
   }
@@ -249,7 +251,12 @@ function refreshLinkedStates(applyAuthority = ha?.connected === true) {
         state.errorCode = 'INVALID_ENTITY';
         continue;
       }
-      const reading = haReading(haStates.get(link.id));
+      const entity = haStates.get(link.id);
+      if (applyAuthority && section === 'lights' && entity) {
+        const name = entity.attributes?.friendly_name;
+        state.displayName = typeof name === 'string' ? name.trim() || null : null;
+      }
+      const reading = haReading(entity);
       const part = reading?.[section === 'lights' ? 'light' : 'ac'];
       if (applyAuthority && section === 'acs' && device.sensor?.service === 'homeassistant') {
         const value = haReading(haStates.get(device.sensor.id))?.temperature;

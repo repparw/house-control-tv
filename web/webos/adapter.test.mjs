@@ -88,7 +88,7 @@ function useStorage() {
 }
 
 async function install(planValue = plan(), states = [
-  { entity_id: 'light.ha', state: 'off', attributes: {}, last_updated: new Date().toISOString() },
+  { entity_id: 'light.ha', state: 'off', attributes: { friendly_name: 'Kitchen' }, last_updated: new Date().toISOString() },
 ]) {
   useStorage();
   globalThis.WebSocket = FakeSocket;
@@ -113,6 +113,7 @@ test('foreground lifecycle closes Home Assistant and reconnects with a fresh sna
 
   const hidden = await webosAPI('/api/webos/visibility', { visible: false });
   assert.equal(hidden.state, 'paused');
+  assert.equal((await webosAPI('/api/home')).state.lights.ha.displayName, 'Kitchen');
   assert.equal(hidden.reconnecting, false);
   assert.equal(FakeSocket.instances[0].readyState, 3);
 

@@ -107,14 +107,23 @@ function renderDevices() {
     // On small TV chips the 3D lamp highlight would redraw the model on every move; keep focus instant there.
     b.onfocus = () => { const u = world?.lights.get(d.id); if (u && RES === 1) { u.hoverGoal = 1; world.setRunning(true); } };
     b.onblur = () => { const u = world?.lights.get(d.id); if (u && RES === 1) { u.hoverGoal = 0; world.setRunning(true); } };
-    list.append(b); lightNodes.set(d.id, { b, detail, lamp });
+    list.append(b); lightNodes.set(d.id, { b, detail, name, lamp });
   }
 }
 function update() {
   if (!config || !$('#status')) return;
   const on = Object.values(store.state.lights).filter(s => s.on).length;
   $('#status').textContent = (demo || bundle?.mode === 'demo') ? 'Demo · no real devices' : bundle?.mode === 'standalone' ? (bundle.connectionLabel || (online ? 'TV · Smart Life connected' : 'Connect Smart Life on TV')) : online ? 'Synced with Mac' : 'Mac offline · view only';
-  if (webosDemo && bundle?.connection) $('#status').textContent = bundle.connection.label;
+  if (webosDemo && bundle?.connection) {
+    $('#status').textContent = bundle.connection.label;
+    const settings = bundle.connection.connected || bundle.connection.reconnecting;
+    const control = $('.sync-button');
+    const label = settings ? 'Settings' : 'Sync & connect';
+    if (control.getAttribute('aria-label') !== label) {
+      control.setAttribute('aria-label', label);
+      control.replaceChildren(icon(settings ? 'Settings2' : 'Smartphone'), el('span', '', label));
+    }
+  }
   $('#status').classList.toggle('offline', !online && !demo);
   const acOn = Object.values(store.state.acs).filter(s => s.on).length;
   const sceneName = config.scenes.find(s => s.id === store.state.scene)?.name;
@@ -125,8 +134,11 @@ function update() {
   for (const [id, n] of lightNodes) {
     const s = store.state.lights[id]; if (!s) continue;
     n.b.classList.toggle('on', s.on); n.b.setAttribute('aria-pressed', String(s.on));
-    n.b.setAttribute('aria-label', `${config.lights.find(d=>d.id===id).name}, ${s.on ? 'on' : 'off'}`);
-    n.detail.textContent = (room === 'all' ? roomName(config.lights.find(d=>d.id===id).room) + ' · ' : '') + (s.on ? 'On' : 'Off');
+    const device = config.lights.find(d => d.id === id);
+    const name = webosDemo ? s.displayName || device.name : device.name;
+    n.name.textContent = name;
+    n.b.setAttribute('aria-label', `${name}, ${s.on ? 'on' : 'off'}`);
+    n.detail.textContent = (room === 'all' ? roomName(device.room) + ' · ' : '') + (s.on ? 'On' : 'Off');
     if (webosDemo) n.detail.textContent += ' · ' + deviceStatus(s);
     n.b.disabled = webosDemo ? !s.controlEnabled : !available();
   }
