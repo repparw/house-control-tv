@@ -2,6 +2,7 @@ name: webOS standalone
 on:
   push:
     branches: ['webos/**']
+    tags: ['webos-v*']
   pull_request:
     paths: ['web/**', 'docs/webos.md', '.github/workflows/webos.yml']
 jobs:
@@ -30,3 +31,22 @@ jobs:
           path: .local/webos/*.ipk
           if-no-files-found: error
           retention-days: 7
+  release:
+    if: startsWith(github.ref, 'refs/tags/webos-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: house-control-webos-ipk
+          path: package
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version web/webos/appinfo.json)
+          test "$GITHUB_REF_NAME" = "webos-v$version"
+          gh release create "$GITHUB_REF_NAME" "package/dev.housecontrol.webos_${version}_all.ipk" \
+            --verify-tag --title "House Control for webOS $version" --generate-notes
