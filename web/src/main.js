@@ -42,7 +42,10 @@ function apply(next) {
   try { localStorage.setItem('house-tv:last-home:v1', JSON.stringify(next)); } catch {}
 }
 function available() { return webosDemo || demo || online; }
-function deviceStatus(s) { return s.pending ? 'Pending' : s.error || (s.simulated ? 'Simulated' : s.status); }
+function deviceStatus(s) {
+  if (s.pending) return 'Pending';
+  return s.error || ({ stale: 'Last known', unavailable: 'Unavailable', disconnected: 'Offline', unsupported: 'Unsupported', invalid: 'Invalid entity' })[s.status];
+}
 async function command(action) {
   if (busy) return;
   if (!available()) { toast(bundle?.mode === 'standalone' ? (bundle.connectionLabel || 'Connect your devices') + ' in Sync & connect.' : 'Open House Control and TV Bridge on your Mac to control devices.'); return; }
@@ -139,7 +142,8 @@ function update() {
     n.name.textContent = name;
     n.b.setAttribute('aria-label', `${name}, ${s.on ? 'on' : 'off'}`);
     n.detail.textContent = (room === 'all' ? roomName(device.room) + ' · ' : '') + (s.on ? 'On' : 'Off');
-    if (webosDemo) n.detail.textContent += ' · ' + deviceStatus(s);
+    const status = webosDemo && deviceStatus(s);
+    if (status) n.detail.textContent += ' · ' + status;
     n.b.disabled = webosDemo ? !s.controlEnabled : !available();
   }
   for (const [id, n] of acNodes) {
@@ -149,7 +153,8 @@ function update() {
     n.target.replaceChildren(document.createTextNode(s.target), el('span', '', '°'));
     n.mode.textContent = s.on ? modes[s.mode] || s.mode : 'Off';
     n.current.textContent = Number.isFinite(s.roomTemp) ? `${Math.round(s.roomTemp * 10) / 10}° in room` : 'No sensor';
-    if (webosDemo) n.mode.textContent += ' · ' + deviceStatus(s);
+    const status = webosDemo && deviceStatus(s);
+    if (status) n.mode.textContent += ' · ' + status;
     const disabled = webosDemo ? !s.controlEnabled : !available();
     n.power.disabled = disabled; n.minus.disabled = disabled || s.target <= d.min; n.plus.disabled = disabled || s.target >= d.max;
   }

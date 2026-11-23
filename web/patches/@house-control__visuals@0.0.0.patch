@@ -30,7 +30,7 @@ index f150718..b676f72 100644
  
    const lights = (raw.lights || []).map((l) => {
 diff --git a/src/three/furniture.js b/src/three/furniture.js
-index 51f73db..eb2d938 100644
+index 51f73db..5c0f07e 100644
 --- a/src/three/furniture.js
 +++ b/src/three/furniture.js
 @@ -85,8 +85,13 @@ const builders = {
@@ -49,7 +49,18 @@ index 51f73db..eb2d938 100644
      return group(
        at(box(width, 0.04, 0.58, wood, { r: 0.015 }), 0, 0.36, 0),
        at(box(width - 0.16, 0.02, 0.44, mat(BLACK, { rough: 0.5 }), { r: 0.008 }), 0, 0.14, 0),
-@@ -112,6 +117,45 @@ const builders = {
+@@ -99,9 +104,7 @@ const builders = {
+   tv({ width = 1.7 }) {
+     const sw = width * 0.84;
+     const sh = sw * 0.5625;
+-    const screen = new THREE.MeshStandardMaterial({
+-      color: '#05070c', roughness: 0.25, emissive: '#27407a', emissiveIntensity: 0.35,
+-    });
++    const screen = new THREE.MeshBasicMaterial({ color: '#101828', toneMapped: false });
+     return group(
+       at(box(width, 0.36, 0.4, mat(DARK_WOOD, { rough: 0.6 }), { r: 0.015 }), 0, 0.1, 0),
+       ...legs(width, 0.4, 0.1, mat(BLACK), 0.08, 0.015),
+@@ -112,6 +115,45 @@ const builders = {
      );
    },
  
@@ -95,7 +106,7 @@ index 51f73db..eb2d938 100644
    sideboard({ width = 1.6 }) {
      return group(
        ...legs(width, 0.42, 0.16, mat(BLACK), 0.07, 0.015),
-@@ -159,17 +203,22 @@ const builders = {
+@@ -159,17 +201,22 @@ const builders = {
      return g;
    },
  
@@ -125,7 +136,7 @@ index 51f73db..eb2d938 100644
      );
      if (upper) {
        g.add(
-@@ -217,13 +266,14 @@ const builders = {
+@@ -217,13 +264,14 @@ const builders = {
      );
    },
  
@@ -145,7 +156,7 @@ index 51f73db..eb2d938 100644
      return g;
    },
  
-@@ -249,15 +299,18 @@ const builders = {
+@@ -249,15 +297,18 @@ const builders = {
      return g;
    },
  
@@ -168,7 +179,7 @@ index 51f73db..eb2d938 100644
      );
    },
  
-@@ -269,24 +322,27 @@ const builders = {
+@@ -269,24 +320,27 @@ const builders = {
      );
    },
  
@@ -204,7 +215,7 @@ index 51f73db..eb2d938 100644
        c,
      );
    },
-@@ -321,6 +377,55 @@ const builders = {
+@@ -321,6 +375,55 @@ const builders = {
      return g;
    },
  
@@ -260,7 +271,7 @@ index 51f73db..eb2d938 100644
    // A straight flight up to the floor above: you step on at the front (+z) and climb towards the back.
    stairs({ width = 1, depth = 2.8, height = 2.9 }) {
      const steps = Math.max(3, Math.round(height / 0.18));
-@@ -357,21 +462,28 @@ export function footprint(item) {
+@@ -357,21 +460,28 @@ export function footprint(item) {
      case 'rug': return item.size || [2, 1.4];
      case 'sofa': return [w || 2.2, 0.95];
      case 'armchair': return [0.92, 0.88];
@@ -293,7 +304,7 @@ index 51f73db..eb2d938 100644
      case 'wardrobe': return [w || 1.6, 0.6];
      case 'bookshelf': return [w || 1, 0.32];
      case 'stairs': return [w || 1, item.depth || 2.8];
-@@ -379,7 +491,8 @@ export function footprint(item) {
+@@ -379,7 +489,8 @@ export function footprint(item) {
    }
  }
  
@@ -303,7 +314,7 @@ index 51f73db..eb2d938 100644
    const root = new THREE.Group();
    for (const item of items) {
      const make = builders[item.type];
-@@ -387,7 +500,7 @@ export function buildFurniture(items) {
+@@ -387,7 +498,7 @@ export function buildFurniture(items) {
        console.warn(`[plan] skipping furniture of unknown type "${item.type}"`);
        continue;
      }

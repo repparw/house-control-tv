@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@house-control/visuals@0.0.0':
-    hash: 16d06be21bcccf5d106c72f34662e0b7a1a975d3390354fd7b081f735fd0a1b5
+    hash: d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2
     path: patches/@house-control__visuals@0.0.0.patch
 
 importers:
@@ -15,7 +15,7 @@ importers:
     dependencies:
       '@house-control/visuals':
         specifier: github:repparw/house-control#5343c233220dadcbf8a75726c701372c18c17349&path:web/packages/visuals
-        version: https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=16d06be21bcccf5d106c72f34662e0b7a1a975d3390354fd7b081f735fd0a1b5)(three@0.186.1)
+        version: https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2)(three@0.186.1)
       lucide:
         specifier: 0.544.0
         version: 0.544.0
@@ -454,7 +454,7 @@ snapshots:
       tslib: 2.9.1
     optional: true
 
-  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=16d06be21bcccf5d106c72f34662e0b7a1a975d3390354fd7b081f735fd0a1b5)(three@0.186.1)':
+  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2)(three@0.186.1)':
     dependencies:
       three: 0.186.1
 
