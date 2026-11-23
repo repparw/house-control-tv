@@ -82,3 +82,8 @@ For multi-device House Control scenes, **attempt every independent supported, av
 ## Deferred feature: native Home Assistant scenes and scripts
 
 After the first webOS release, consider discovering and invoking Home Assistant's native `scene` and `script` entities alongside existing House Control JSON scenes. Scope to a separate issue when repository Issues are enabled; this is **not** part of the first release (Q17). Resolve how to distinguish native scenes from House Control scenes, whether scripts with required fields can be supported, error reporting, and whether remote-control and Luma integrations should expose them. Preserve existing JSON scene behavior and avoid automatic execution on discovery.
+
+
+## Floor-plan replacement (Q19)
+
+Importing a new valid House Control floor-plan JSON **replaces the existing plan after explicit confirmation**. Preserve Home Assistant connection settings and securely stored credentials independently of the floor-plan file. Preserve local simulated-device state only when device IDs and compatible device types match the new plan. Reinitialize other local-only state from the imported plan. Device states linked to Home Assistant remain authoritative on HA; refresh them after import instead of treating cached states as current. **Import must never trigger real-device commands**, including scene execution or toggles. Validate the incoming JSON before changing the active plan, and leave the existing plan intact on validation/import failure.
