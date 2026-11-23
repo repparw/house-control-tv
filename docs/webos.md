@@ -13,9 +13,9 @@ This branch ports the upstream Three.js TV interface to a standalone webOS appli
 From `web/` with Node 24:
 
 ```sh
-npm ci
+pnpm install --frozen-lockfile
 node --test webos/*.test.mjs
-npm run build:webos
+pnpm run build:webos
 npx --yes --package=@webos-tools/cli@3.2.6 ares-package dist --outdir ../.local/webos
 ```
 
