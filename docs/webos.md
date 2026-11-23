@@ -49,3 +49,8 @@ Target **webOS TV 24 and newer** for initial secure credential-storage integrati
 ## Pairing network decision (Q12)
 
 QR onboarding is **local-network-only**: phone and TV must be on the same LAN. No remote pairing, cloud relay, permanent companion service, or root-only dependency is needed. Keep TV-side manual configuration as a fallback. An ephemeral LAN setup listener is conditional on demonstrating secure transport and functional unrooted webOS compatibility; it must close after setup, cancellation, or expiry.
+
+
+## Foreground lifecycle decision (Q13)
+
+The standalone app maintains its Home Assistant connection **only while House Control is visible**. When webOS backgrounds or suspends the app, release the WebSocket and stop reconnect timers. On resume, reconnect with persisted credentials and fetch a fresh state snapshot before treating device states as current. Home Assistant automations continue independently; there is no always-on House Control service. Any future Luma Home integration must manage its own lifecycle separately.
