@@ -97,3 +97,8 @@ For linked devices with a live Home Assistant connection, update the displayed d
 ## Home Assistant state synchronization (Q21)
 
 While House Control is foregrounded and connected, subscribe to Home Assistant's WebSocket `state_changed` events for live device updates. On every initial connection and reconnection, obtain a full state snapshot and reconcile any events arriving during snapshot retrieval, so that older snapshot values cannot overwrite newer events. Do not poll continuously or run background reconciliation. On disconnect, retain last-known display state but mark it stale and reject real-device commands (Q14). Pending optimistic commands (Q20) must reconcile against authoritative events, command failures, and timeouts.
+
+
+## Release distribution (Q22)
+
+Publish reproducible webOS `.ipk` artifacts through **GitHub Releases first**. The initial test and installation paths are LG Developer Mode on unrooted TVs and the user's existing root-enabled C3 without changing its root/developer-mode configuration. Clearly document that Developer Mode installations can expire or be removed when the developer session ends. **LG Content Store / Seller Lounge submission is a later milestone**, not a condition of the initial release. Keep the build and packaging process suitable for eventual official submission.
