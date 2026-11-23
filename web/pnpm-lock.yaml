@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@house-control/visuals@0.0.0':
-    hash: d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2
+    hash: c324f5cc7fd2d46ad8d9d4017be90fc343917c78ed5c16f4b93727524a53ddf2
     path: patches/@house-control__visuals@0.0.0.patch
 
 importers:
@@ -14,8 +14,8 @@ importers:
   .:
     dependencies:
       '@house-control/visuals':
-        specifier: github:repparw/house-control#5343c233220dadcbf8a75726c701372c18c17349&path:web/packages/visuals
-        version: https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2)(three@0.186.1)
+        specifier: github:repparw/house-control#fa773b8a53ac672e67dbf730daa3fa6a7647d76c&path:web/packages/visuals
+        version: https://codeload.github.com/repparw/house-control/tar.gz/fa773b8a53ac672e67dbf730daa3fa6a7647d76c#path:web/packages/visuals(patch_hash=c324f5cc7fd2d46ad8d9d4017be90fc343917c78ed5c16f4b93727524a53ddf2)(three@0.186.1)
       lucide:
         specifier: 0.544.0
         version: 0.544.0
@@ -41,8 +41,8 @@ packages:
   '@emnapi/wasi-threads@2.2.0':
     resolution: {integrity: sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw==}
 
-  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals':
-    resolution: {path: web/packages/visuals, tarball: https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349}
+  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/fa773b8a53ac672e67dbf730daa3fa6a7647d76c#path:web/packages/visuals':
+    resolution: {path: web/packages/visuals, tarball: https://codeload.github.com/repparw/house-control/tar.gz/fa773b8a53ac672e67dbf730daa3fa6a7647d76c}
     version: 0.0.0
     peerDependencies:
       three: ^0.186.1
@@ -454,7 +454,7 @@ snapshots:
       tslib: 2.9.1
     optional: true
 
-  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/5343c233220dadcbf8a75726c701372c18c17349#path:web/packages/visuals(patch_hash=d47439f6044bb873ed1c3d41f5fef56b036472aee18006aad8383d396bcafce2)(three@0.186.1)':
+  '@house-control/visuals@https://codeload.github.com/repparw/house-control/tar.gz/fa773b8a53ac672e67dbf730daa3fa6a7647d76c#path:web/packages/visuals(patch_hash=c324f5cc7fd2d46ad8d9d4017be90fc343917c78ed5c16f4b93727524a53ddf2)(three@0.186.1)':
     dependencies:
       three: 0.186.1
 

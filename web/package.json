@@ -12,7 +12,7 @@
     "three": "0.186.1",
     "lucide": "0.544.0",
     "qrcode": "1.5.4",
-    "@house-control/visuals": "github:repparw/house-control#5343c233220dadcbf8a75726c701372c18c17349&path:web/packages/visuals"
+    "@house-control/visuals": "github:repparw/house-control#fa773b8a53ac672e67dbf730daa3fa6a7647d76c&path:web/packages/visuals"
   },
   "devDependencies": {
     "vite": "8.3.4"
