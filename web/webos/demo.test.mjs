@@ -19,6 +19,9 @@ test('imported bindings remain isolated while scenes and demo reset work', async
   };
   const initial = await webosAPI('/api/home');
   assert.equal(initial.mode, 'demo');
+  await webosAPI('/api/webos/visibility', { visible: false });
+  await webosAPI('/api/webos/visibility', { visible: true });
+  assert.equal((await webosAPI('/api/home')).controlReady, true);
   const imported = structuredClone(plan);
   imported.name = 'Imported test home';
   imported.lights[0].link = { service: 'homeassistant', id: 'light.never_call' };

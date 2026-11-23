@@ -308,7 +308,7 @@ function setHAState(state) {
 function setConnectionStatus(state, label, error = null) {
   if (!home) return;
   home.mode = state === 'demo' || (home.mode === 'demo' && !haCredentials) ? 'demo' : 'standalone';
-  home.controlReady = state === 'connected';
+  home.controlReady = state === 'connected' || state === 'demo';
   home.macOnline = state === 'connected';
   home.connection = {
     state,
