@@ -64,3 +64,8 @@ When Home Assistant is unreachable, **keep the floor plan and 3D navigation usab
 ## Unlinked device behavior (Q15)
 
 Devices with **no provider link** remain interactive as **simulated devices**, consistent with the original House Control model. Label those controls clearly as simulated; changing them affects only the local 3D representation and never sends a command to Home Assistant or any other real device. Do not treat an unavailable or unsupported **linked** device as an unlinked simulated one. An unsupported linked provider should display its status and reject real commands rather than silently simulating success.
+
+
+## Home Assistant device mapping (Q16)
+
+For the initial release, use the existing House Control floor-plan JSON device links, such as `"link": { "service": "homeassistant", "id": "light.living_room" }`. Imported plans define the mappings; the TV and QR setup flow do not offer an entity browser, automatic matching, or a second device-link editor. Preserve compatibility with the upstream floor-plan format and its editor. A later phone-based mapping UI can be considered independently.
