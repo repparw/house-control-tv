@@ -74,3 +74,11 @@ For the initial release, use the existing House Control floor-plan JSON device l
 ## Scene behavior (Q17)
 
 The initial webOS release supports **House Control scenes defined in the imported floor-plan JSON**. Apply their device-state targets through the linked Home Assistant entities, preserving upstream scene semantics, including toggle behavior where supported. Do not discover or expose native Home Assistant scenes, scripts, or automations in this milestone. A separate provider feature can add those later without changing existing floor plans.
+
+## Scene failure policy (Q18)
+
+For multi-device House Control scenes, **attempt every independent supported, available device change** even if another device is offline or rejects its command. Collect and report per-device failures, then refresh from Home Assistant's actual states; do not mark a partially applied scene as successful or selected. Never queue scene actions while offline, and do not attempt automatic rollback of changes that already succeeded. Unsupported linked providers are explicit per-device failures, not simulated successes. Unlinked devices remain simulated as decided in Q15. A full scene is only considered applied when all intended changes succeeded.
+
+## Deferred feature: native Home Assistant scenes and scripts
+
+After the first webOS release, consider discovering and invoking Home Assistant's native `scene` and `script` entities alongside existing House Control JSON scenes. Scope to a separate issue when repository Issues are enabled; this is **not** part of the first release (Q17). Resolve how to distinguish native scenes from House Control scenes, whether scripts with required fields can be supported, error reporting, and whether remote-control and Luma integrations should expose them. Preserve existing JSON scene behavior and avoid automatic execution on discovery.
