@@ -54,3 +54,8 @@ QR onboarding is **local-network-only**: phone and TV must be on the same LAN. N
 ## Foreground lifecycle decision (Q13)
 
 The standalone app maintains its Home Assistant connection **only while House Control is visible**. When webOS backgrounds or suspends the app, release the WebSocket and stop reconnect timers. On resume, reconnect with persisted credentials and fetch a fresh state snapshot before treating device states as current. Home Assistant automations continue independently; there is no always-on House Control service. Any future Luma Home integration must manage its own lifecycle separately.
+
+
+## Offline state decision (Q14)
+
+When Home Assistant is unreachable, **keep the floor plan and 3D navigation usable**. Display each device's last-known state with a visible **stale/offline indicator**, not as a live reading. Disable real-device commands while disconnected, and automatically retry the connection with bounded backoff **only while House Control is visible** (Q13). When reconnected, fetch a fresh snapshot before clearing stale indicators and allowing live control. Cached presentation state must not be mistaken for authoritative device state or used to queue offline actions. The app should retain last-known display state across an app restart when practical, separately from credentials, without claiming that stored readings are current.
