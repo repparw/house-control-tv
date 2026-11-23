@@ -1,7 +1,432 @@
+diff --git a/src/config.js b/src/config.js
+index f150718..b676f72 100644
+--- a/src/config.js
++++ b/src/config.js
+@@ -1,7 +1,7 @@
+ // Loads and normalises a floor plan ("home.json"). Everything the 3D scene and the UI
+ // know about the apartment comes from this one document, so swapping the file swaps the home.
+ 
+-const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip'];
++const LIGHT_TYPES = ['ceiling', 'pendant', 'spots', 'floor', 'table', 'strip', 'bulkhead'];
+ const WALLS = ['north', 'south', 'east', 'west'];
+ 
+ export class ConfigError extends Error {}
+@@ -28,7 +28,7 @@ export const SERVICES = {
+   hue: { name: 'Philips Hue', short: 'Hue' },
+   homekit: { name: 'Apple Home', short: 'Apple Home' },
+ };
+-export const FLOOR_KINDS = ['oak', 'walnut', 'tile', 'stone'];
++export const FLOOR_KINDS = ['oak', 'walnut', 'tile', 'stone', 'stripedTile', 'terracottaTile'];
+ 
+ // A home on several floors lists them in "levels", lowest first: [{ id, name, wallHeight? }].
+ // Rooms, furniture and openings say which one they are on with "level"; lamps and ACs are on
+@@ -89,7 +89,7 @@ export function normalize(raw) {
+   const openings = (raw.openings || []).map((o, i) => {
+     need(isPoint(o.from) && isPoint(o.to), `Opening #${i + 1} needs "from" and "to" points`);
+     need(o.from[0] === o.to[0] || o.from[1] === o.to[1], `Opening #${i + 1} must be axis-aligned`);
+-    return { type: o.type || 'door', from: o.from, to: o.to, sill: o.sill ?? 0.85, head: o.head ?? 2.1, level: levelOf(o, `Opening #${i + 1}`) };
++    return { type: o.type || 'door', from: o.from, to: o.to, sill: o.sill ?? 0.85, head: o.head ?? (o.type === 'window' ? 2.1 : undefined), frosted: o.frosted, panes: o.panes, level: levelOf(o, `Opening #${i + 1}`) };
+   });
+ 
+   const lights = (raw.lights || []).map((l) => {
+diff --git a/src/three/furniture.js b/src/three/furniture.js
+index 51f73db..eb2d938 100644
+--- a/src/three/furniture.js
++++ b/src/three/furniture.js
+@@ -85,8 +85,13 @@ const builders = {
+     return seating(0.92, 0.88, color, 1);
+   },
+ 
+-  coffeeTable({ width = 1.1 }) {
+-    const wood = mat(WOOD, { rough: 0.6 });
++  coffeeTable({ width = 1.1, depth = 0.58, height = 0.4, color = WOOD, woodShelf = false }) {
++    const wood = mat(color, { rough: 0.6 });
++    if (woodShelf) return group(
++      at(box(width, 0.03, depth, wood, { r: 0.008 }), 0, height - 0.03, 0),
++      at(box(width - 0.07, 0.025, depth - 0.035, wood), 0, 0.075, 0),
++      ...legs(width, depth, height - 0.03, wood, 0.022, 0.026),
++    );
+     return group(
+       at(box(width, 0.04, 0.58, wood, { r: 0.015 }), 0, 0.36, 0),
+       at(box(width - 0.16, 0.02, 0.44, mat(BLACK, { rough: 0.5 }), { r: 0.008 }), 0, 0.14, 0),
+@@ -112,6 +117,45 @@ const builders = {
+     );
+   },
+ 
++  ovenStand({ width = 0.62, depth = 0.44, height = 0.94 }) {
++    const white = mat(WHITE);
++    const steel = mat('#a5a3a0', { metal: 0.45, rough: 0.45 });
++    const dark = mat('#222429');
++    const cubby = 0.23;
++    const ovenWidth = width - 0.09;
++    const ovenDepth = depth - 0.06;
++    return group(
++      at(box(width, height - cubby, depth, white), 0, 0, 0),
++      at(box(width, 0.025, depth, white), 0, height - 0.025, 0),
++      at(box(width, cubby, 0.018, white), 0, height - cubby, -depth / 2 + 0.009),
++      ...[-1, 1].flatMap(side => [
++        at(box(0.023, cubby, depth, white), side * (width / 2 - 0.0115), height - cubby, 0),
++        at(box(0.017, 0.15, 0.026, steel), side * 0.035, height - cubby - 0.22, depth / 2 + 0.012),
++      ]),
++      ...doorLines(width, height - cubby - 0.05, 0.02, depth / 2 + 0.001, 2, mat('#b6b4b0')),
++      at(box(ovenWidth, 0.33, ovenDepth, steel), 0, height, 0),
++      at(box(ovenWidth - 0.11, 0.226, 0.012, dark, { r: 0.006 }), -0.033, height + 0.043, ovenDepth / 2),
++      at(box(ovenWidth - 0.15, 0.018, 0.024, steel), -0.033, height + 0.255, ovenDepth / 2 + 0.015),
++      ...[0.07, 0.15, 0.23].map(y =>
++        at(box(0.035, 0.035, 0.023, dark, { r: 0.015 }), ovenWidth / 2 - 0.037, height + y, ovenDepth / 2)),
++      at(box(0.23, 0.24, 0.23, dark, { r: 0.05 }), 0, height + 0.33, 0),
++      at(box(0.032, 0.11, 0.024, steel), 0, height + 0.39, 0.115),
++    );
++  },
++
++  coffeeShelf({ width = 0.66, depth = 0.28 }) {
++    const steel = mat('#c2c2bf', { metal: 0.5, rough: 0.38 });
++    const dark = mat('#29292b');
++    return group(
++      at(box(width, 0.028, depth, mat(WHITE), { r: 0.005 }), 0, 0, 0),
++      at(cyl(0.064, 0.082, 0.19, steel), 0.16, 0.04, 0),
++      at(cyl(0.085, 0.085, 0.028, dark), 0.16, 0.028, 0),
++      at(box(0.035, 0.11, 0.044, dark), 0.237, 0.09, 0),
++      at(cyl(0.044, 0.05, 0.14, dark), -0.19, 0.028, 0.02),
++      at(box(0.084, 0.125, 0.052, mat('#cbbba2')), -0.047, 0.028, -0.018),
++    );
++  },
++
+   sideboard({ width = 1.6 }) {
+     return group(
+       ...legs(width, 0.42, 0.16, mat(BLACK), 0.07, 0.015),
+@@ -159,17 +203,22 @@ const builders = {
+     return g;
+   },
+ 
+-  kitchen({ width = 3, upper = true }) {
++  kitchen({ width = 3, upper = true, depth, height = 0.9 }) {
++    const counterHeight = 0.04;
++    const cabinetHeight = height - counterHeight;
++    const cabinetDepth = depth == null ? 0.6 : depth - 0.03;
++    const counterDepth = depth ?? 0.63;
++    const counterWidth = depth == null ? width + 0.02 : width;
+     const front = mat('#e4e1da', { rough: 0.6 });
+     const seam = mat('#b9b6ae');
+     const n = Math.max(2, Math.round(width / 0.6));
+     const g = group(
+-      at(box(width, 0.86, 0.6, front, { r: 0.008 }), 0, 0, 0),
+-      ...doorLines(width, 0.78, 0.06, 0.3, n, seam),
+-      at(box(width + 0.02, 0.04, 0.63, mat('#33363d', { rough: 0.35 }), { r: 0.008 }), 0, 0.86, 0.005),
+-      at(box(0.58, 0.012, 0.5, mat('#0c0d10', { rough: 0.15 }), { r: 0 }), -width / 4, 0.9, 0),
+-      at(box(0.5, 0.012, 0.38, mat(METAL, { rough: 0.3, metal: 0.9 }), { r: 0 }), width / 4, 0.9, 0.02),
+-      at(cyl(0.015, 0.015, 0.24, mat(METAL, { rough: 0.25, metal: 0.9 }), 10), width / 4, 0.9, -0.22),
++      at(box(width, cabinetHeight, cabinetDepth, front, { r: 0.008 }), 0, 0, 0),
++      ...doorLines(width, cabinetHeight - 0.08, 0.06, cabinetDepth / 2, n, seam),
++      at(box(counterWidth, counterHeight, counterDepth, mat('#33363d', { rough: 0.35 }), { r: 0.008 }), 0, cabinetHeight, depth == null ? 0.005 : 0),
++      at(box(0.58, 0.012, 0.5, mat('#0c0d10', { rough: 0.15 }), { r: 0 }), -width / 4, height, 0),
++      at(box(0.5, 0.012, 0.38, mat(METAL, { rough: 0.3, metal: 0.9 }), { r: 0 }), width / 4, height, 0.02),
++      at(cyl(0.015, 0.015, 0.24, mat(METAL, { rough: 0.25, metal: 0.9 }), 10), width / 4, height, -0.22),
+     );
+     if (upper) {
+       g.add(
+@@ -217,13 +266,14 @@ const builders = {
+     );
+   },
+ 
+-  dresser({ width = 1.3 }) {
++  dresser({ width = 1.3, depth = 0.45, height }) {
++    const bodyHeight = height == null ? 0.74 : height - 0.1;
+     const g = group(
+-      ...legs(width, 0.45, 0.1, mat(BLACK), 0.06, 0.015),
+-      at(box(width, 0.74, 0.45, mat(WHITE, { rough: 0.6 }), { r: 0.015 }), 0, 0.1, 0),
+-      at(cyl(0.09, 0.07, 0.18, mat('#c9a15e', { rough: 0.4 })), width / 2 - 0.3, 0.84, 0),
++      ...legs(width, depth, 0.1, mat(BLACK), 0.06, 0.015),
++      at(box(width, bodyHeight, depth, mat(WHITE, { rough: 0.6 }), { r: 0.015 }), 0, 0.1, 0),
++      height == null && at(cyl(0.09, 0.07, 0.18, mat('#c9a15e', { rough: 0.4 })), width / 2 - 0.3, 0.84, 0),
+     );
+-    for (let i = 1; i < 3; i++) g.add(at(box(width - 0.06, 0.006, 0.005, mat('#b9b6ae'), { r: 0 }), 0, 0.1 + 0.247 * i, 0.226));
++    for (let i = 1; i < 3; i++) g.add(at(box(width - 0.06, 0.006, 0.005, mat('#b9b6ae'), { r: 0 }), 0, 0.1 + bodyHeight / 3 * i, depth / 2 + 0.001));
+     return g;
+   },
+ 
+@@ -249,15 +299,18 @@ const builders = {
+     return g;
+   },
+ 
+-  vanity({ width = 1.0 }) {
++  vanity({ width = 1.0, pedestal = false }) {
+     const mirror = new THREE.MeshStandardMaterial({ color: '#b9c7dc', roughness: 0.12, metalness: 0.9 });
+     return group(
+-      at(box(width, 0.62, 0.48, mat(WOOD, { rough: 0.6 }), { r: 0.012 }), 0, 0.2, 0),
+-      ...doorLines(width, 0.56, 0.23, 0.24, 2, mat(DARK_WOOD)),
++      pedestal
++        ? at(cyl(0.08, 0.115, 0.82, mat(WHITE)), 0, 0, 0)
++        : at(box(width, 0.62, 0.48, mat(WOOD, { rough: 0.6 }), { r: 0.012 }), 0, 0.2, 0),
++      ...(!pedestal ? doorLines(width, 0.56, 0.23, 0.24, 2, mat(DARK_WOOD)) : []),
++      pedestal && at(box(width * 0.86, 0.62, 0.12, mat(WHITE)), 0, 1.19, -0.24),
+       at(box(width + 0.03, 0.04, 0.5, mat(WHITE, { rough: 0.25 }), { r: 0.012 }), 0, 0.82, 0),
+       at(cyl(0.19, 0.15, 0.1, mat(WHITE, { rough: 0.2 })), 0, 0.86, 0.02),
+       at(cyl(0.012, 0.012, 0.2, mat(METAL, { rough: 0.2, metal: 0.9 }), 10), 0, 0.86, -0.18),
+-      at(box(width * 0.82, 0.8, 0.025, mirror, { r: 0.01 }), 0, 1.08, -0.225),
++      at(box(width * 0.82, pedestal ? 0.58 : 0.8, 0.025, mirror, { r: 0.01 }), 0, pedestal ? 1.21 : 1.08, pedestal ? -0.171 : -0.225),
+     );
+   },
+ 
+@@ -269,24 +322,27 @@ const builders = {
+     );
+   },
+ 
+-  toilet() {
++  toilet({ tank = true }) {
+     const c = mat(WHITE, { rough: 0.25 });
+     const bowl = at(cyl(0.19, 0.13, 0.4, c), 0, 0, 0.1);
+     bowl.scale.z = 1.25;
+     const lid = at(cyl(0.2, 0.2, 0.03, c), 0, 0.4, 0.1);
+     lid.scale.z = 1.25;
+-    return group(at(box(0.38, 0.78, 0.17, c, { r: 0.03 }), 0, 0, -0.24), bowl, lid);
++    return group(tank && at(box(0.38, 0.78, 0.17, c, { r: 0.03 }), 0, 0, -0.24), bowl, lid);
+   },
+ 
+-  desk({ width = 1.4 }) {
++  desk({ width = 1.4, depth = 0.65, height = 0.76 }) {
++    const topThickness = 0.04;
++    const legHeight = height - topThickness;
++    const monitorZ = -depth / 2 + 0.145;
+     const c = chair('#2b2e37');
+-    c.position.z = 0.5;
++    c.position.z = depth / 2 + 0.175;
+     c.rotation.y = Math.PI;
+     return group(
+-      at(box(width, 0.04, 0.65, mat(WOOD, { rough: 0.55 }), { r: 0.012 }), 0, 0.72, 0),
+-      ...legs(width, 0.65, 0.72, mat(BLACK), 0.06, 0.02),
+-      at(box(0.56, 0.34, 0.025, mat(BLACK, { rough: 0.3 }), { r: 0.008 }), 0, 0.86, -0.18),
+-      at(box(0.2, 0.1, 0.12, mat(BLACK), { r: 0.008 }), 0, 0.76, -0.18),
++      at(box(width, topThickness, depth, mat(WOOD, { rough: 0.55 }), { r: 0.012 }), 0, legHeight, 0),
++      ...legs(width, depth, legHeight, mat(BLACK), 0.06, 0.02),
++      at(box(0.56, 0.34, 0.025, mat(BLACK, { rough: 0.3 }), { r: 0.008 }), 0, height + 0.1, monitorZ),
++      at(box(0.2, 0.1, 0.12, mat(BLACK), { r: 0.008 }), 0, height, monitorZ),
+       c,
+     );
+   },
+@@ -321,6 +377,55 @@ const builders = {
+     return g;
+   },
+ 
++  shoeRack() {
++    const rack = mat('#aaa29a');
++    const shoes = mat('#47423f');
++    return group(
++      ...legs(0.5, 0.28, 0.3, rack, 0.03, 0.02),
++      ...[0.06, 0.24].flatMap(y => [
++        at(box(0.5, 0.025, 0.28, rack), 0, y, 0),
++        ...[-0.16, -0.07, 0.07, 0.16].map(x =>
++          at(box(0.067, 0.045, 0.18, shoes, { r: 0.02 }), x, y + 0.025, 0)),
++      ]),
++    );
++  },
++
++  foldingDoor({ width = 0.14 }, { interiorWallHeight }) {
++    const height = Math.min(1.98, interiorWallHeight);
++    const panel = mat(WHITE);
++    return group(...Array.from({ length: 4 }, (_, i) =>
++      at(box(width / 4, height, 0.06, panel), (i - 1.5) * width / 4, 0, (i % 2) * 0.025)));
++  },
++
++  towelRail() {
++    return group(
++      at(box(0.32, 0.025, 0.045, mat(METAL)), 0, 0.92, 0.03),
++      at(box(0.2, 0.25, 0.035, mat('#d5c9ba')), 0, 0.67, 0.055),
++    );
++  },
++
++  showerHead() {
++    const chrome = mat('#a9afb8', { metal: 0.65, rough: 0.28 });
++    return group(
++      at(box(0.07, 0.085, 0.02, chrome), 0, 0, 0.01),
++      at(box(0.026, 0.026, 0.26, chrome), 0, 0.032, 0.13),
++      at(cyl(0.083, 0.083, 0.027, chrome), 0, 0.008, 0.24),
++    );
++  },
++
++  showerCurtain({ width = 1.34 }) {
++    const fabric = mat('#222122', { rough: 1 });
++    const rod = mat(METAL);
++    const folds = 12;
++    const pleat = width * 0.55 / folds;
++    return group(
++      at(box(width, 0.022, 0.022, rod), 0, 1.94, 0),
++      ...Array.from({ length: folds }, (_, i) =>
++        at(box(pleat + 0.004, 1.74, i % 2 ? 0.028 : 0.048, fabric),
++          -width / 2 + (i + 0.5) * pleat, 0.17, 0)),
++    );
++  },
++
+   // A straight flight up to the floor above: you step on at the front (+z) and climb towards the back.
+   stairs({ width = 1, depth = 2.8, height = 2.9 }) {
+     const steps = Math.max(3, Math.round(height / 0.18));
+@@ -357,21 +462,28 @@ export function footprint(item) {
+     case 'rug': return item.size || [2, 1.4];
+     case 'sofa': return [w || 2.2, 0.95];
+     case 'armchair': return [0.92, 0.88];
+-    case 'coffeeTable': return [w || 1.1, 0.58];
++    case 'coffeeTable': return [w || 1.1, item.woodShelf ? item.depth || 0.58 : 0.58];
++    case 'ovenStand': return [w || 0.62, item.depth || 0.44];
++    case 'coffeeShelf': return [w || 0.66, item.depth || 0.28];
+     case 'tv': return [w || 1.7, 0.4];
+     case 'sideboard': return [w || 1.6, 0.42];
+     case 'diningSet': return [w || 1.8, 1.9];
+     case 'island': return [w || 2, 1.1];
+-    case 'kitchen': return [w || 3, 0.62];
++    case 'kitchen': return [w || 3, item.depth || 0.62];
+     case 'fridge': return [0.7, 0.68];
+     case 'bed': return [(w || 1.6) + 0.1, 2.14];
+     case 'nightstand': return [0.46, 0.4];
+-    case 'dresser': return [w || 1.3, 0.45];
++    case 'dresser': return [w || 1.3, item.depth || 0.45];
++    case 'shoeRack': return [0.5, 0.28];
++    case 'foldingDoor': return [w || 0.14, 0.09];
++    case 'towelRail': return [0.32, 0.09];
++    case 'showerHead': return [0.17, 0.33];
++    case 'showerCurtain': return [w || 1.34, 0.05];
+     case 'plant': return [0.45, 0.45];
+     case 'vanity': return [w || 1, 0.5];
+     case 'bathtub': return [1.7, 0.78];
+     case 'toilet': return [0.4, 0.66];
+-    case 'desk': return [w || 1.4, 0.65];
++    case 'desk': return [w || 1.4, item.depth || 0.65];
+     case 'wardrobe': return [w || 1.6, 0.6];
+     case 'bookshelf': return [w || 1, 0.32];
+     case 'stairs': return [w || 1, item.depth || 2.8];
+@@ -379,7 +491,8 @@ export function footprint(item) {
+   }
+ }
+ 
+-export function buildFurniture(items) {
++export function buildFurniture(items, { interiorWallHeight = Infinity } = {}) {
++  const context = { interiorWallHeight };
+   const root = new THREE.Group();
+   for (const item of items) {
+     const make = builders[item.type];
+@@ -387,7 +500,7 @@ export function buildFurniture(items) {
+       console.warn(`[plan] skipping furniture of unknown type "${item.type}"`);
+       continue;
+     }
+-    const g = make(item);
++    const g = make(item, context);
+     g.position.set(item.pos[0], item.y || 0, item.pos[1]);
+     g.rotation.y = THREE.MathUtils.degToRad(item.rot || 0);
+     const flat = g.userData.flat;
+diff --git a/src/three/house.js b/src/three/house.js
+index f0560cf..ab8fd3e 100644
+--- a/src/three/house.js
++++ b/src/three/house.js
+@@ -112,6 +112,7 @@ export function buildHouse(config, level = config.levels[0]) {
+     color: '#9cc0ff', roughness: 0.08, transparent: true, opacity: 0.22,
+     emissive: '#3d5fae', emissiveIntensity: 0.5,
+   });
++  const frostedGlass = mat('#e0e9e8', { rough: 0.75 });
+   const frame = mat('#2c3142', { rough: 0.6 });
+ 
+   // A wall piece running from a..b along its axis, between heights y0..y1.
+@@ -152,18 +153,24 @@ export function buildHouse(config, level = config.levels[0]) {
+       if (type !== 'door') piece(s, a, b, 0, CURB, t, wallMats, side.curb);
+       parent = side.tall;
+     }
+-    if (type === 'door' || type === 'open') continue;
+-
+     const height = exterior ? H : Hi;
++    if (type === 'door') {
++      const head = s.opening.head;
++      if (Number.isFinite(head) && head > 0 && head < height) {
++        piece(s, a, b, head, height, t, wallMats, parent);
++      }
++      continue;
++    }
++    if (type === 'open') continue;
+     if (type === 'window' && exterior) {
+       const { sill, head } = s.opening;
+       piece(s, a, b, 0, sill, t, wallMats, parent);
+       piece(s, a, b, Math.min(head, H), H, t, wallMats, parent);
+-      const pane = piece(s, a, b, sill, head, 0.03, glass, parent);
++      const pane = piece(s, a, b, sill, head, 0.03, s.opening.frosted ? frostedGlass : glass, parent);
+       pane.castShadow = false;
+       const fw = 0.05;
+       const bars = [[a, a + fw, sill, head], [b - fw, b, sill, head], [a, b, sill, sill + fw], [a, b, head - fw, head]];
+-      if (b - a > 1.2) bars.push([(a + b) / 2 - fw / 2, (a + b) / 2 + fw / 2, sill, head]);
++      if (s.opening.panes === 2 || b - a > 1.2) bars.push([(a + b) / 2 - fw / 2, (a + b) / 2 + fw / 2, sill, head]);
+       for (const [fa, fb, y0, y1] of bars) piece(s, fa, fb, y0, y1, 0.07, frame, parent);
+       continue;
+     }
+diff --git a/src/three/kit.js b/src/three/kit.js
+index 3681f40..ded01f6 100644
+--- a/src/three/kit.js
++++ b/src/three/kit.js
+@@ -106,13 +106,13 @@ function planks(base) {
+ 
+ function tiles(base, perSide, grout) {
+   return canvasTexture(512, (g, s) => {
+-    const rand = rng(perSide * 31 + base.charCodeAt(2));
++    const rand = rng(perSide * 31 + (Array.isArray(base) ? base[0] : base).charCodeAt(2));
+     const t = s / perSide;
+     g.fillStyle = grout;
+     g.fillRect(0, 0, s, s);
+     for (let i = 0; i < perSide; i++) {
+       for (let j = 0; j < perSide; j++) {
+-        g.fillStyle = shade(base, (rand() - 0.5) * 0.05);
++        g.fillStyle = shade(Array.isArray(base) ? base[j % base.length] : base, (rand() - 0.5) * 0.05);
+         g.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+       }
+     }
+@@ -123,6 +123,8 @@ const FLOORS = {
+   oak: () => planks('#c7a47c'),
+   walnut: () => planks('#94705a'),
+   tile: () => tiles('#d5dade', 4, '#aab0b8'),
++  stripedTile: () => tiles(['#777e70', '#dad4bc'], 6, '#9f9e90'),
++  terracottaTile: () => tiles(['#a36a54', '#98604e', '#ac735d'], 6, '#77584b'),
+   stone: () => tiles('#a2a7ae', 3, '#7c828b'),
+ };
+ 
+diff --git a/src/three/lights.js b/src/three/lights.js
+index 8204c43..1821077 100644
+--- a/src/three/lights.js
++++ b/src/three/lights.js
+@@ -66,10 +66,11 @@ function point(intensity, y, { shadow = true, distance = 0, x = 0, z = 0 } = {})
+ // Each fixture: { parts: Mesh[], glow: Mesh[] (emissive when on), lights: Light[], hit: [w, h, d, y] }
+ const fixtures = {
+   ceiling(cfg, H) {
++    const radius = cfg.radius ?? 0.27;
+     const y = cfg.y ?? H - 0.14;
+     return {
+       parts: [at(cyl(0.012, 0.012, H - y - 0.05, mat(DARK), 8), 0, y + 0.05, 0)],
+-      glow: [at(cyl(0.27, 0.27, 0.055, glowMaterial(), 40), 0, y, 0)],
++      glow: [at(cyl(radius, radius, 0.055, glowMaterial(), 40), 0, y, 0)],
+       lights: [spot(cfg.intensity ?? 20, y - 0.02)],
+       hit: [0.75, 0.5, 0.75, y],
+     };
+@@ -127,6 +128,22 @@ const fixtures = {
+     };
+   },
+ 
++  bulkhead(cfg) {
++    const y = cfg.y ?? 1.92;
++    const base = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat('#73787e'));
++    base.scale.set(0.115, 0.069, 0.036);
++    base.position.set(0, y, 0);
++    const lens = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), glowMaterial());
++    lens.scale.set(0.094, 0.052, 0.025);
++    lens.position.set(0, y, 0.026);
++    return {
++      parts: [base],
++      glow: [lens],
++      lights: [point(cfg.intensity ?? 1.6, y, { shadow: false, distance: 3.2, z: 0.065 })],
++      hit: [0.38, 0.28, 0.23, y],
++    };
++  },
++
+   strip(cfg) {
+     const y = cfg.y ?? 1;
+     const length = cfg.length ?? 1;
 diff --git a/src/three/world.js b/src/three/world.js
+index 1f11164..9c3ad26 100644
 --- a/src/three/world.js
 +++ b/src/three/world.js
-@@ -13,24 +13,54 @@
+@@ -13,24 +13,54 @@ export const STAGE_BG = '#0a0e1a';
  
  const rad = THREE.MathUtils.degToRad;
  const clamp = THREE.MathUtils.clamp;
@@ -65,7 +490,7 @@ diff --git a/src/three/world.js b/src/three/world.js
  
    const camera = new THREE.PerspectiveCamera(24, 1, 0.5, 120);
  
-@@ -43,6 +73,7 @@
+@@ -43,6 +73,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
  
    const baseAz = config.camera.azimuth;
    const baseEl = config.camera.elevation;
@@ -73,7 +498,7 @@ diff --git a/src/three/world.js b/src/three/world.js
  
    /* ---------- content ---------- */
  
-@@ -53,7 +84,16 @@
+@@ -53,7 +84,16 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      const group = new THREE.Group();
      group.position.y = l.elevation;
      const house = buildHouse(config, l);
@@ -81,7 +506,7 @@ diff --git a/src/three/world.js b/src/three/world.js
 +    // A static embedder can cut the walls once and batch the result into one draw per
 +    // material. The unbatched meshes stay in the graph, hidden, for floor picking.
 +    if (staticWalls) house.view(camDir.x, camDir.z);
-+    const furniture = buildFurniture(config.furniture.filter((f) => f.level === l.id));
++    const furniture = buildFurniture(config.furniture.filter((f) => f.level === l.id), { interiorWallHeight: Math.min(config.interiorWallHeight, l.wallHeight) });
 +    group.add(batchStatic ? batchStatic(house.group) : house.group);
 +    group.add(batchStatic ? batchStatic(furniture) : furniture);
 +    if (batchStatic) {
@@ -91,7 +516,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      scene.add(group);
      floors.set(l.id, { group, house });
    }
-@@ -61,13 +101,16 @@
+@@ -61,13 +101,16 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    const lights = new Map();
    // A lamp's shadows only change when the walls do, and they are the costly ones: six faces a
    // lamp. They are drawn on request, the moon's whenever any shadow map is.
@@ -110,7 +535,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      }
    }
  
-@@ -82,6 +125,12 @@
+@@ -82,6 +125,12 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    const shadowCap = Math.max(1, Math.min(8, renderer.capabilities.maxTextures - 6));
    // Only the floor on show lights its rooms, so the slots go to its lamps.
    function assignShadows() {
@@ -123,7 +548,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      const ranked = [...lights.values()].filter((u) => u.cfg.level === level.id).sort((a, b) =>
        (SHADOW_PRIORITY[a.cfg.type] ?? 9) - (SHADOW_PRIORITY[b.cfg.type] ?? 9));
      // One lamp per room first, so every room keeps some depth, then fill up to the cap.
-@@ -136,10 +185,11 @@
+@@ -136,10 +185,11 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    }
  
    // Night-time ambience: enough to read the model with every lamp off.
@@ -138,7 +563,7 @@ diff --git a/src/three/world.js b/src/three/world.js
    const sc = moon.shadow.camera;
    sc.left = sc.bottom = -span * 0.85;
    sc.right = sc.top = span * 0.85;
-@@ -150,15 +200,21 @@
+@@ -150,15 +200,21 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    moon.shadow.normalBias = 0.04;
    moon.shadow.radius = 4;
    scene.add(moon, moon.target);
@@ -166,7 +591,7 @@ diff --git a/src/three/world.js b/src/three/world.js
  
    /* ---------- camera rig ---------- */
  
-@@ -169,11 +225,14 @@
+@@ -169,11 +225,14 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      pan: new THREE.Vector3(), // the view's centre, moved off what it is framing
      framed: center.clone(),   // the centre of what it is framing
    };
@@ -181,7 +606,7 @@ diff --git a/src/three/world.js b/src/three/world.js
    let width = 1;
    let height = 1;
    let topInset = 0;    // pixels at the top covered by the header
-@@ -266,6 +325,28 @@
+@@ -266,6 +325,28 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    }
  
    function updateRig(dt, instant = false) {
@@ -210,7 +635,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      // Two fingers move the model with them, so it stays under them; the rest glides.
      const held = pinch || magnify || performance.now() < wheelUntil;
      const k = instant ? 1 : 1 - Math.exp(-dt * (held ? 28 : 5.5));
-@@ -280,14 +361,17 @@
+@@ -280,14 +361,17 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      camera.position.copy(rig.target).addScaledVector(fwd, -rig.dist);
      camera.up.set(0, 1, 0);
      camera.lookAt(rig.target);
@@ -231,7 +656,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      let active = false;
      for (const { house } of floors.values()) {
        const state = house.update(dt);
-@@ -398,7 +482,8 @@
+@@ -398,7 +482,8 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
    function zoomTo(zoom, spot, m) {
      rig.zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
      frameGoal();
@@ -241,7 +666,7 @@ diff --git a/src/three/world.js b/src/three/world.js
    }
    function startPinch() {
      pinch = { fingers: Math.min(2, fingers.size), spread: spread(), zoom: rig.zoom, spot: spotAt(between()) };
-@@ -430,7 +515,7 @@
+@@ -430,7 +515,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
        const dy = ev.clientY - drag.y;
        if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; setHover(null); canvas.style.cursor = 'grabbing'; }
        if (drag.moved) {
@@ -250,7 +675,7 @@ diff --git a/src/three/world.js b/src/three/world.js
          rig.goal.el = clamp(drag.el + dy * 0.3, EL_MIN, EL_MAX);
          frameGoal();
          userMoved();
-@@ -473,7 +558,7 @@
+@@ -473,7 +558,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      ev.preventDefault();
      const held = ev.ctrlKey || ev.metaKey;
      const notch = ev.deltaMode === 1 || (ev.deltaX === 0 && ev.wheelDeltaY !== 0 && ev.wheelDeltaY % 120 === 0);
@@ -259,7 +684,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      wheelAt = ev.timeStamp;
      wheelUntil = performance.now() + 200;
      const unit = ev.deltaMode === 1 ? 16 : 1;
-@@ -508,6 +593,7 @@
+@@ -508,6 +593,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
  
    let raf = 0;
    let last = 0;
@@ -267,7 +692,7 @@ diff --git a/src/three/world.js b/src/three/world.js
    let awake = 0;       // frames still owed after the last change
    let running = false;
    let shadowAz = baseAz; // where the moon was when its shadows were last drawn
-@@ -519,14 +605,17 @@
+@@ -519,14 +605,17 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
  
    function frame(now) {
      raf = 0;
@@ -287,7 +712,7 @@ diff --git a/src/three/world.js b/src/three/world.js
        renderer.shadowMap.needsUpdate = true;
        shadowFrames = Math.max(0, shadowFrames - 1);
        wallsMoved = false;
-@@ -534,7 +623,7 @@
+@@ -534,7 +623,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
        active = true;
      }
      if (active || awake > 0) {
@@ -296,7 +721,7 @@ diff --git a/src/three/world.js b/src/three/world.js
        awake = Math.max(0, awake - 1);
        if (hovered && active) onHover({ ...hovered, ...screenAnchor(hovered) });
      }
-@@ -546,14 +635,21 @@
+@@ -546,14 +635,21 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      if (!r.width || !r.height) return;
      width = r.width;
      height = r.height;
@@ -323,7 +748,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      camera.updateProjectionMatrix();
      frameGoal();
      wake(3);
-@@ -566,6 +662,82 @@
+@@ -566,6 +662,82 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
      setInsets(top, bottom) { topInset = top; bottomInset = bottom; resize(); },
      resize,
  
@@ -406,7 +831,7 @@ diff --git a/src/three/world.js b/src/three/world.js
      get level() { return level.id; },
  
      // Shows another floor of the home (and the ones under it).
-@@ -575,7 +747,7 @@
+@@ -575,7 +747,7 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
        level = next;
        showLevel();
        if (rig.focus && levelOf(rig.focus) !== level.id) rig.focus = null;
@@ -415,7 +840,7 @@ diff --git a/src/three/world.js b/src/three/world.js
        frameGoal();
        userMoved();
        wake(4);
-@@ -636,8 +808,9 @@
+@@ -636,8 +808,9 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
        running = false;
        if (raf) cancelAnimationFrame(raf);
        raf = 0;
@@ -427,7 +852,7 @@ diff --git a/src/three/world.js b/src/three/world.js
        renderer.dispose();
        renderer.forceContextLoss();
      },
-@@ -650,9 +823,10 @@
+@@ -650,9 +823,10 @@ export function createWorld(canvas, config, store, { onHover, onPick, onLevel =
          for (const unit of lights.values()) unit.update(0.05);
          for (const unit of acs.values()) unit.update(0.05);
        }
