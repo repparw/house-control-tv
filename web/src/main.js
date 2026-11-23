@@ -267,18 +267,80 @@ async function openWebosDemo() {
       },
     }));
   }
+  const connections = modal;
   const file=el('input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','Import floor plan JSON');
-  file.onchange=async()=>{
-    if (!file.files?.[0]) return;
+  file.onchange = async () => {
+    const selected = file.files?.[0];
+    if (!selected || file.disabled) return;
+    file.value = '';
+    file.disabled = true;
+    message.textContent = '';
     try {
-      if (file.files[0].size > 512*1024) throw new Error('Floor plan must be smaller than 512 KiB.');
-      const plan = JSON.parse(await file.files[0].text());
-      normalize(plan.plan ?? plan);
-      if (!window.confirm('Replace the current floor plan with this home?')) { file.value=''; return; }
-      await api('/api/import',plan);
-      closeModal();world?.dispose();config=null;room='all';await boot();
-    } catch(error) { message.textContent=error.message; }
+      if (selected.size > 512 * 1024) throw new Error('Floor plan must be 512 KiB or less.');
+      const payload = JSON.parse(await selected.text());
+      const plan = normalize(payload?.plan ?? payload);
+      if (modal === connections) confirmImport(payload, plan.name);
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      file.disabled = false;
+      if (modal === connections && panel.isConnected) file.focus();
+    }
   };
+  function confirmImport(payload, name) {
+    const confirmation = el('section', 'sync-panel');
+    confirmation.tabIndex = -1;
+    const description = el('p', 'sync-description', `Replace the current floor plan with “${name}”?`);
+    description.id = 'webos-import-description';
+    description.style.overflowWrap = 'anywhere';
+    confirmation.style.maxHeight = '90vh';
+    confirmation.style.overflow = 'auto';
+    const actions = el('div', 'import-row');
+    let submitting = false;
+
+    function returnToConnections() {
+      connections.replaceChildren(panel);
+      connections.setAttribute('aria-label', 'House Control connections');
+      connections.removeAttribute('aria-describedby');
+      file.focus();
+    }
+
+    const cancel = button('Cancel', 'ArrowLeft', returnToConnections, 'secondary');
+    const replace = button('Replace floor plan', 'Check', async () => {
+      if (submitting || modal !== connections || !confirmation.isConnected) return;
+      submitting = true;
+      cancel.disabled = replace.disabled = true;
+      confirmation.focus();
+      try {
+        await api('/api/import', payload);
+      } catch (error) {
+        message.textContent = error.message;
+        if (modal === connections) returnToConnections();
+        return;
+      }
+      if (modal === connections) closeModal();
+      world?.dispose();
+      config = null;
+      room = 'all';
+      await boot();
+    }, 'primary');
+
+    confirmation.onkeydown = event => {
+      const back = event.key === 'Escape' || event.key === 'BrowserBack' || event.keyCode === 461;
+      if (!back && event.key !== 'Tab') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (submitting) return;
+      if (back) returnToConnections();
+      else (document.activeElement === cancel ? replace : cancel).focus();
+    };
+    actions.append(cancel, replace);
+    confirmation.append(el('h2', '', 'Replace floor plan'), description, actions);
+    connections.setAttribute('aria-label', 'Replace floor plan');
+    connections.setAttribute('aria-describedby', description.id);
+    connections.replaceChildren(confirmation);
+    cancel.focus();
+  }
   panel.append(el('p','sync-note','Import floor plan JSON'),file,message,
     button('Back to home','ArrowLeft',closeModal,'secondary'),
     button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
