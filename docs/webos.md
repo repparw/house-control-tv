@@ -69,3 +69,8 @@ Devices with **no provider link** remain interactive as **simulated devices**, c
 ## Home Assistant device mapping (Q16)
 
 For the initial release, use the existing House Control floor-plan JSON device links, such as `"link": { "service": "homeassistant", "id": "light.living_room" }`. Imported plans define the mappings; the TV and QR setup flow do not offer an entity browser, automatic matching, or a second device-link editor. Preserve compatibility with the upstream floor-plan format and its editor. A later phone-based mapping UI can be considered independently.
+
+
+## Scene behavior (Q17)
+
+The initial webOS release supports **House Control scenes defined in the imported floor-plan JSON**. Apply their device-state targets through the linked Home Assistant entities, preserving upstream scene semantics, including toggle behavior where supported. Do not discover or expose native Home Assistant scenes, scripts, or automations in this milestone. A separate provider feature can add those later without changing existing floor plans.
