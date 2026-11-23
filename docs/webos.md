@@ -59,3 +59,8 @@ The standalone app maintains its Home Assistant connection **only while House Co
 ## Offline state decision (Q14)
 
 When Home Assistant is unreachable, **keep the floor plan and 3D navigation usable**. Display each device's last-known state with a visible **stale/offline indicator**, not as a live reading. Disable real-device commands while disconnected, and automatically retry the connection with bounded backoff **only while House Control is visible** (Q13). When reconnected, fetch a fresh snapshot before clearing stale indicators and allowing live control. Cached presentation state must not be mistaken for authoritative device state or used to queue offline actions. The app should retain last-known display state across an app restart when practical, separately from credentials, without claiming that stored readings are current.
+
+
+## Unlinked device behavior (Q15)
+
+Devices with **no provider link** remain interactive as **simulated devices**, consistent with the original House Control model. Label those controls clearly as simulated; changing them affects only the local 3D representation and never sends a command to Home Assistant or any other real device. Do not treat an unavailable or unsupported **linked** device as an unlinked simulated one. An unsupported linked provider should display its status and reject real commands rather than silently simulating success.
