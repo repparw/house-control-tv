@@ -1,10 +1,14 @@
 // Home Assistant's WebSocket API supplies state, events, and service calls without HTTP CORS.
 // Credentials remain in memory for this first standalone integration; never write them into a floor plan.
 const ENTITY = /^(light|switch|climate|sensor)\.[a-z0-9_]{1,200}$/;
+const CONTROL_ENTITY = /^(light|switch|climate)\.[a-z0-9_]{1,200}$/;
+const REQUEST_TIMEOUT = 10000;
 
 export function haURL(raw) {
   const input = String(raw || '').trim();
-  const url = new URL(input.includes('://') ? input : 'http://' + input);
+  let url;
+  try { url = new URL(input.includes('://') ? input : 'http://' + input); }
+  catch { throw new Error('Enter only the Home Assistant server address.'); }
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password ||
       (url.pathname !== '/' && url.pathname !== '') || url.search || url.hash)
     throw new Error('Enter only the Home Assistant server address.');
@@ -21,8 +25,21 @@ export function haURL(raw) {
   return url.origin;
 }
 
+export function isHAEntity(entityId) {
+  return ENTITY.test(entityId);
+}
+
+export function isHAControlEntity(entityId) {
+  return CONTROL_ENTITY.test(entityId);
+}
+
+function stateTime(state) {
+  const value = Date.parse(state?.last_updated || state?.last_changed || '');
+  return Number.isFinite(value) ? value : null;
+}
+
 export class HAConnection {
-  constructor(Socket = globalThis.WebSocket) {
+  constructor(Socket = globalThis.WebSocket, options = {}) {
     this.Socket = Socket;
     this.ws = null;
     this.nextId = 0;
@@ -32,6 +49,10 @@ export class HAConnection {
     this.onDisconnect = () => {};
     this.subscriptionId = null;
     this.staged = null;
+    this.stagedTimes = new Map();
+    this.stateTimes = new Map();
+    this.states = new Map();
+    this.requestTimeout = Number.isFinite(options.requestTimeout) ? options.requestTimeout : REQUEST_TIMEOUT;
   }
 
   async connect(address, token, onState, onDisconnect = () => {}) {
@@ -43,14 +64,17 @@ export class HAConnection {
     this.onDisconnect = onDisconnect;
     this.nextId = 0;
     this.connected = false;
-    this.staged = null;
+    this.stateTimes.clear();
+    this.states.clear();
     const wsURL = url.replace(/^http/, 'ws') + '/api/websocket';
     const socket = new this.Socket(wsURL);
     this.ws = socket;
     let done = false;
     let resolveAuth, rejectAuth;
     const authenticated = new Promise((resolve, reject) => { resolveAuth = resolve; rejectAuth = reject; });
-    const timeout = setTimeout(() => { if (!done) { rejectAuth(new Error('Home Assistant did not respond.')); socket.close(); } }, 10000);
+    const timeout = setTimeout(() => {
+      if (!done) { rejectAuth(new Error('Home Assistant did not respond.')); socket.close(); }
+    }, this.requestTimeout);
     const complete = (err) => {
       if (done) return;
       done = true; clearTimeout(timeout);
@@ -79,8 +103,8 @@ export class HAConnection {
         if (typeof entityId !== 'string') return;
         // A deleted entity is unavailable, not permanently stuck in its previous state.
         const state = changed.new_state ?? { entity_id: entityId, state: 'unavailable', attributes: {} };
-        if (this.staged) this.staged.set(entityId, state);
-        else this.onState(state);
+        if (this.staged) this.stageState(entityId, state);
+        else if (this.acceptState(entityId, state)) this.onState(state);
       }
     };
     socket.onerror = () => { complete(new Error('Cannot open the Home Assistant WebSocket.')); };
@@ -93,30 +117,83 @@ export class HAConnection {
     };
     try {
       await authenticated;
-      // Subscribe before reading the snapshot so changes cannot be missed at startup.
+      // Stage before subscribing so an event cannot arrive between the subscription result and
+      // the start of the snapshot. The snapshot and those events are then reconciled as one set.
+      this.staged = new Map();
+      this.stagedTimes.clear();
       const subscription = this.request('subscribe_events', { event_type: 'state_changed' });
       this.subscriptionId = this.nextId;
       await subscription;
-      this.staged = new Map();
-      const states = await this.request('get_states');
-      if (!Array.isArray(states)) throw new Error('Home Assistant returned an invalid state snapshot.');
-      const latest = new Map(states.filter(s => s?.entity_id).map(s => [s.entity_id, s]));
-      for (const [id, event] of this.staged) {
-        const previous = latest.get(id);
-        // Home Assistant state objects carry last_updated timestamps. A snapshot
-        // newer than a queued event must not be overwritten by that older event.
-        const oldTime = Date.parse(previous?.last_updated);
-        const newTime = Date.parse(event.last_updated);
-        if (!previous || !Number.isFinite(oldTime) || !Number.isFinite(newTime) || newTime >= oldTime)
-          latest.set(id, event);
-      }
-      for (const state of latest.values()) this.onState(state);
-      this.staged = null;
+      await this.readSnapshot();
       this.connected = true;
+      this.staged = null;
+      this.stagedTimes.clear();
       return { url };
     } catch (error) {
       socket.close();
       throw error;
+    }
+  }
+
+  stageState(entityId, state) {
+    const previous = this.staged.get(entityId);
+    const previousTime = this.stagedTimes.get(entityId);
+    const nextTime = stateTime(state);
+    // Events normally carry timestamps. If they do not, their arrival order is the only
+    // ordering information available and the latest event wins.
+    if (previous && previousTime !== null && nextTime !== null && nextTime < previousTime) return;
+    this.staged.set(entityId, state);
+    if (nextTime !== null) this.stagedTimes.set(entityId, nextTime);
+    else this.stagedTimes.delete(entityId);
+  }
+
+  acceptState(entityId, state) {
+    const nextTime = stateTime(state);
+    const previousTime = this.stateTimes.get(entityId);
+    if (previousTime !== undefined && nextTime !== null && nextTime < previousTime) return false;
+    if (nextTime !== null) this.stateTimes.set(entityId, nextTime);
+    this.states.set(entityId, state);
+    return true;
+  }
+
+  async readSnapshot() {
+    const states = await this.request('get_states');
+    if (!Array.isArray(states)) throw new Error('Home Assistant returned an invalid state snapshot.');
+    const latest = new Map(states.filter(s => s?.entity_id).map(s => [s.entity_id, s]));
+    for (const [id, previous] of this.states) {
+      const snapshot = latest.get(id);
+      const previousTime = stateTime(previous);
+      const snapshotTime = stateTime(snapshot);
+      if (previousTime !== null && (snapshotTime === null || snapshotTime < previousTime)) latest.set(id, previous);
+    }
+    for (const [id, event] of this.staged || []) {
+      const previous = latest.get(id);
+      const oldTime = stateTime(previous);
+      const newTime = stateTime(event);
+      // A snapshot newer than a queued event must not be overwritten by that older event.
+      if (!previous || oldTime === null || newTime === null || newTime >= oldTime) latest.set(id, event);
+    }
+    for (const [id, state] of latest) {
+      const time = stateTime(state);
+      if (time !== null) this.stateTimes.set(id, time);
+      else this.stateTimes.delete(id);
+      this.states.set(id, state);
+      this.onState(state);
+    }
+    return states;
+  }
+
+  async snapshot() {
+    if (!this.connected) throw new Error('Home Assistant is not connected.');
+    const previousStaged = this.staged;
+    const previousTimes = this.stagedTimes;
+    this.staged = new Map();
+    this.stagedTimes = new Map();
+    try {
+      return await this.readSnapshot();
+    } finally {
+      this.staged = previousStaged;
+      this.stagedTimes = previousTimes;
     }
   }
 
@@ -127,7 +204,7 @@ export class HAConnection {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('Home Assistant request timed out.'));
-      }, 10000);
+      }, this.requestTimeout);
       this.pending.set(id, { resolve, reject, timer });
       try { this.ws.send(JSON.stringify({ id, type, ...fields })); }
       catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
@@ -143,6 +220,7 @@ export class HAConnection {
   close() {
     const socket = this.ws;
     this.ws = null; this.connected = false; this.subscriptionId = null; this.staged = null;
+    this.stagedTimes.clear();
     if (socket) { socket.onclose = null; socket.close(); }
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Home Assistant disconnected.')); }
     this.pending.clear();
@@ -199,8 +277,9 @@ export function haCalls(id, patch, desired, attributes = {}) {
     const modes = attributes.hvac_modes || [];
     const requested = patch.mode || desired.mode || 'cool';
     const names = requested === 'fan' ? ['fan_only'] : requested === 'auto' ? ['auto', 'heat_cool'] : [requested];
-    const selected = names.find(x => modes.includes(x));
-    if (selected) calls.push([domain, 'set_hvac_mode', { hvac_mode: selected }]);
+    const selected = names.find(x => modes.includes(x)) || (modes.length ? null : names[0]);
+    if (!selected) throw new Error('Home Assistant does not support the requested climate mode.');
+    calls.push([domain, 'set_hvac_mode', { hvac_mode: selected }]);
   }
   if (patch.target !== undefined) calls.push([domain, 'set_temperature', { temperature: patch.target }]);
   return calls;

@@ -33,7 +33,7 @@ test('imported HA-linked light uses the live WebSocket and never saves credentia
   await webosAPI('/api/home');
   const imported = structuredClone(plan);
   imported.lights[0].link = { service: 'homeassistant', id: 'light.kitchen' };
-  await webosAPI('/api/import', imported);
+  await webosAPI('/api/import', { plan: imported, confirm: true });
   const token = 'Z'.repeat(40);
   await webosAPI('/api/webos/ha/connect', { url: '192.168.0.20', token });
   const current = await webosAPI('/api/home');
@@ -58,13 +58,19 @@ test('imported HA-linked light uses the live WebSocket and never saves credentia
   await assert.rejects(webosAPI('/api/action', { kind: 'light', id: imported.lights[0].id, on: false }), /Connect Home Assistant/);
 });
 
-test('rejects unsupported providers before running a scene', async () => {
+test('reports unsupported providers as scene failures without simulating them', async () => {
   const plan = JSON.parse(await readFile(new URL('../public/plans/demo-loft.json', import.meta.url)));
   plan.lights[0].link = { service: 'hue', id: 'abc' };
-  await webosAPI('/api/import', plan);
+  await webosAPI('/api/import', { plan, confirm: true });
   await webosAPI('/api/webos/ha/connect', { url: '192.168.0.20', token: 'x'.repeat(40) });
   const before = FakeSocket.last.sent.length;
-  await assert.rejects(webosAPI('/api/action', { kind: 'scene', id: plan.scenes.at(-1).id }), /unsupported provider/);
+  await webosAPI('/api/action', { kind: 'scene', id: plan.scenes.at(-1).id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const operation = (await webosAPI('/api/webos/operation'));
+  assert.equal(operation.status, 'partial');
+  assert.equal(operation.failures.length, 1);
+  assert.match(operation.failures[0].message, /unsupported provider/);
+  assert.equal((await webosAPI('/api/home')).state.scene, null);
   assert.equal(FakeSocket.last.sent.slice(before).filter(m => m.type === 'call_service').length, 0);
   await webosAPI('/api/webos/ha/disconnect', {});
 });

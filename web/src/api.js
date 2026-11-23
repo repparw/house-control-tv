@@ -18,6 +18,25 @@ async function ensureSession() {
 }
 let counter = 0;
 const pending = new Map();
+
+export function webosVisibility(visible) {
+  if (!webosDemo) return Promise.resolve(null);
+  return webosAPI('/api/webos/visibility', { visible: visible !== false });
+}
+
+if (webosDemo && typeof document !== 'undefined') {
+  let visible = !document.hidden;
+  const updateVisibility = () => {
+    const next = !document.hidden;
+    if (next === visible) return;
+    visible = next;
+    webosVisibility(visible).catch(() => {});
+  };
+  document.addEventListener('visibilitychange', updateVisibility);
+  document.addEventListener('webkitvisibilitychange', updateVisibility);
+  if (document.hidden) webosVisibility(false).catch(() => {});
+}
+
 window.__tvReply = (id, response) => {
   const p = pending.get(id); if (!p) return;
   pending.delete(id); clearTimeout(p.timer);

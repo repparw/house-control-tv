@@ -22,7 +22,7 @@ test('imported bindings remain isolated while scenes and demo reset work', async
   const imported = structuredClone(plan);
   imported.name = 'Imported test home';
   imported.lights[0].link = { service: 'homeassistant', id: 'light.never_call' };
-  await webosAPI('/api/import', imported);
+  await webosAPI('/api/import', { plan: imported, confirm: true });
   const current = await webosAPI('/api/home');
   assert.equal(current.plan.name, imported.name);
   const id = current.plan.lights[0].id;
@@ -34,7 +34,7 @@ test('imported bindings remain isolated while scenes and demo reset work', async
   await assert.rejects(webosAPI('/api/action', { kind: 'light', id, on: true }), /Connect Home Assistant/);
   await assert.rejects(webosAPI('/api/import', { rooms: [] }));
   assert.equal((await webosAPI('/api/home')).plan.name, imported.name);
-  await webosAPI('/api/import', { plan: imported });
+  await webosAPI('/api/import', { plan: imported, confirm: true });
   assert.equal((await webosAPI('/api/home')).plan.name, imported.name);
   await webosAPI('/api/demo', { enabled: true });
   assert.equal((await webosAPI('/api/home')).plan.name, plan.name);

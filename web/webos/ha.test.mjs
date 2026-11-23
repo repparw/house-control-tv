@@ -99,6 +99,41 @@ test('buffers updates during get_states and uses the newest timestamp', async ()
   client.close();
 });
 
+test('keeps newer authoritative events over older events and snapshots', async () => {
+  class OrderedSocket extends FakeSocket {
+    send(text) {
+      const msg = JSON.parse(text);
+      this.sent.push(msg);
+      if (msg.type === 'auth') queueMicrotask(() => this.emit({ type: 'auth_ok' }));
+      else if (msg.type === 'subscribe_events') queueMicrotask(() => this.emit({
+        id: msg.id, type: 'result', success: true, result: null,
+      }));
+      else if (msg.type === 'get_states') queueMicrotask(() => this.emit({
+        id: msg.id, type: 'result', success: true, result: [
+          { entity_id: 'light.kitchen', state: 'off', last_updated: '2026-11-22T18:00:00Z' },
+        ],
+      }));
+    }
+  }
+  const seen = [];
+  const client = new HAConnection(OrderedSocket);
+  await client.connect('192.168.0.20', 'a'.repeat(40), state => seen.push(state));
+  OrderedSocket.last.emit({ type: 'event', id: client.subscriptionId, event: {
+    data: { entity_id: 'light.kitchen', new_state: {
+      entity_id: 'light.kitchen', state: 'on', last_updated: '2026-11-22T18:00:02Z',
+    } } },
+  });
+  OrderedSocket.last.emit({ type: 'event', id: client.subscriptionId, event: {
+    data: { entity_id: 'light.kitchen', new_state: {
+      entity_id: 'light.kitchen', state: 'off', last_updated: '2026-11-22T18:00:01Z',
+    } } },
+  });
+  assert.equal(seen.at(-1).state, 'on');
+  await client.snapshot();
+  assert.equal(seen.at(-1).state, 'on');
+  client.close();
+});
+
 test('rejects commands when the socket closes', async () => {
   const client = new HAConnection(FakeSocket);
   await client.connect('192.168.0.20', 'a'.repeat(40), () => {});
