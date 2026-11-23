@@ -45,3 +45,7 @@ The demo previously rendered 78 draw calls, 21,422 triangles and five textures w
 ## Compatibility decision (Q11)
 
 Target **webOS TV 24 and newer** for initial secure credential-storage integration. Support older webOS versions where practical, but only if a suitable protected credential store has been verified for them. A missing secure store is not permission to persist Home Assistant tokens in ordinary browser storage or plain files. Root access must never be required for the standalone application. QR onboarding and storage mechanisms remain subject to real-TV validation.
+
+## Pairing network decision (Q12)
+
+QR onboarding is **local-network-only**: phone and TV must be on the same LAN. No remote pairing, cloud relay, permanent companion service, or root-only dependency is needed. Keep TV-side manual configuration as a fallback. An ephemeral LAN setup listener is conditional on demonstrating secure transport and functional unrooted webOS compatibility; it must close after setup, cancellation, or expiry.
