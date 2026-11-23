@@ -87,3 +87,8 @@ After the first webOS release, consider discovering and invoking Home Assistant'
 ## Floor-plan replacement (Q19)
 
 Importing a new valid House Control floor-plan JSON **replaces the existing plan after explicit confirmation**. Preserve Home Assistant connection settings and securely stored credentials independently of the floor-plan file. Preserve local simulated-device state only when device IDs and compatible device types match the new plan. Reinitialize other local-only state from the imported plan. Device states linked to Home Assistant remain authoritative on HA; refresh them after import instead of treating cached states as current. **Import must never trigger real-device commands**, including scene execution or toggles. Validate the incoming JSON before changing the active plan, and leave the existing plan intact on validation/import failure.
+
+
+## Optimistic device controls (Q20)
+
+For linked devices with a live Home Assistant connection, update the displayed device state **optimistically** as soon as the user issues a control command. Mark it as pending until confirmed by Home Assistant's resulting state update. If HA returns an error, the command times out, or the reported authoritative state differs from the requested state, reconcile the UI to HA's actual state and show a concise failure or correction message. Do not leave a stale optimistic state presented as confirmed. New commands must not overwrite newer authoritative events due to out-of-order responses; handle rapid successive commands and disconnects safely. No optimistic real-device actions are allowed while offline (Q14). Simulated devices update immediately without HA confirmation (Q15).
