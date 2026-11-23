@@ -8,7 +8,7 @@
   "appDescription": "Standalone 3D home controls for webOS. Experimental Home Assistant support.",
   "icon": "icon.png",
   "resolution": "1920x1080",
-  "requiredACG": [],
+  "requiredACG": ["securitykey.operation"],
   "disableBackHistoryAPI": true,
   "supportGIP": true
 }

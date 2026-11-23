@@ -121,3 +121,50 @@ Use the upstream shared Three.js renderer and floor-plan parser extracted in [ho
 Development dependency: the package extracted in [PR #29](https://github.com/0xProbabillity/house-control/pull/29), pinned to source commit `5343c233220dadcbf8a75726c701372c18c17349` with pnpm's Git subdirectory support (`path:web/packages/visuals`).
 
 The parser and provider-link helpers are now consumed from `@house-control/visuals` instead of maintaining a third parser copy. **The 3D canvas still uses the TV-specific renderer temporarily.** It adds transparent backgrounds, daylight settings, a restricted D-pad orbit, render-resolution controls, and performance tuning that the extracted renderer's public API does not yet expose. Replacing that copy requires adapting these behaviors or defining small shared-world hooks, and a real-TV performance check. Do not claim multi-floor rendering support in the TV frontend solely because the parser accepts multi-floor JSON.
+
+## Secure onboarding platform decision
+
+LG documents Keymanager3 for stock webOS TV 24 and later. The credential-store
+module uses an app-owned AES-256-GCM key. Keymanager3 generates the nonce and
+performs authenticated encryption and decryption. The app stores a versioned
+nonce and ciphertext in the app's browser storage. The URL and token are both
+inside the ciphertext. The packaged app declares `securitykey.operation` and
+includes LG's webOSTV.js 1.2.13 with its Apache 2.0 license. [Keymanager3 reference](https://webostv.developer.lge.com/develop/references/keymanager3),
+[ACG guide](https://webostv.developer.lge.com/develop/guides/acg-guide),
+[webOSTV.js download](https://webostv.developer.lge.com/develop/references/webostvjs-introduction).
+
+Phone QR provisioning is blocked on the supported stock platform. LG Developer
+Support answered a question about opening a TCP port from a JS service by
+directing developers to use the TV as a client only. The JS service guide
+describes low-level networking, which does not establish support for an inbound
+LAN listener. Keep manual TV entry available. Enable phone provisioning only
+after demonstrating an authenticated, encrypted LAN path on unrooted hardware
+with session expiry, cancellation, and listener shutdown. [LG Developer Support on opening a TCP port](https://forum.webostv.developer.lge.com/t/open-http-server/9585),
+[JS service guide](https://webostv.developer.lge.com/develop/guides/js-service-basics).
+
+### Integration contract
+
+- Instantiate `createHACredentialStore()` from `web/src/webos-credentials.js`
+  once per app. `load()` resolves to `{ url, token }` or `null` for an empty
+  store. It rejects if a saved record cannot be read or authenticated.
+- Call `save({ url, token })` after successful HA authentication. It
+  normalizes the address and verifies a decryption round trip before replacing
+  the record. A rejected save preserves the previous record. Surface failures
+  explicitly. Manual credentials may be held in memory for the current
+  session.
+- Call `clear()` on explicit disconnect or reset that forgets credentials.
+  It deletes the key and then removes the ciphertext. If it rejects, surface
+  the failure and keep the live HA connection closed. During suspend, close
+  the WebSocket and retain the protected record.
+- Mount `createHASetupForm({ connect, onConnected })` from
+  `web/src/webos-setup.js` in the webOS setup dialog. `connect` receives
+  `{ url, token }` and returns a result with `persisted: true` only after a
+  successful store write. Keep the form visible long enough to communicate
+  session-only success, or pass that status to the parent dialog before
+  closing it. The UI can use the existing plan-import flow independently.
+
+The isolated modules require no package manifest or lockfile changes.
+Hardware validation still needs a stock Developer Mode install, a save and
+reload across an app restart, and a disconnect followed by another restart.
+`webos/credentials.test.mjs` exercises the storage contract with a simulated
+Keymanager3 service. LG lists Keymanager3 as unavailable in the emulator.
