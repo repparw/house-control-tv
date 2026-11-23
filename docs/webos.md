@@ -115,3 +115,9 @@ Use the upstream shared Three.js renderer and floor-plan parser extracted in [ho
 3. **Secure onboarding:** verify stock unrooted webOS service listener and protected credential storage APIs. Then build local-only short-lived QR form for HA credentials and optional JSON import. Never fall back silently to plaintext credential persistence or unencrypted token transfer.
 4. **Renderer dependency:** consume upstream `@house-control/visuals` once it is accessible and suitable for the standalone repository. No need to wait for the upstream merge to test HA.
 5. **Release:** test on real webOS hardware, document rootless Developer Mode limitations, publish versioned GitHub Release IPKs, and defer LG Store and full phone companion.
+
+## Shared visuals integration (in progress)
+
+Development dependency: the package extracted in [PR #29](https://github.com/0xProbabillity/house-control/pull/29), pinned to source commit `5343c233220dadcbf8a75726c701372c18c17349` with pnpm's Git subdirectory support (`path:web/packages/visuals`).
+
+The parser and provider-link helpers are now consumed from `@house-control/visuals` instead of maintaining a third parser copy. **The 3D canvas still uses the TV-specific renderer temporarily.** It adds transparent backgrounds, daylight settings, a restricted D-pad orbit, render-resolution controls, and performance tuning that the extracted renderer's public API does not yet expose. Replacing that copy requires adapting these behaviors or defining small shared-world hooks, and a real-TV performance check. Do not claim multi-floor rendering support in the TV frontend solely because the parser accepts multi-floor JSON.

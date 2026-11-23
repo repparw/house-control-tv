@@ -1,4 +1,4 @@
-import { normalize, linkOf } from './vendor/config.js';
+import { normalize, linkOf } from '@house-control/visuals';
 import { HAConnection, haReading, haCalls } from './webos-ha.js';
 
 const KEY = 'house-control:webos:demo:v1';

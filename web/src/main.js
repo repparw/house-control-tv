@@ -1,7 +1,7 @@
 import './style.css';
 import { createElement, House, Settings2, ChevronLeft, ChevronRight, Lightbulb, Power, Minus, Plus, Snowflake, Sun, Moon, Sofa, Film, DoorOpen, Wifi, Rotate3d, Check, ArrowLeft, Smartphone, RefreshCw, Info, HandHeart } from 'lucide';
 import QRCode from 'qrcode';
-import { normalize } from './vendor/config.js';
+import { normalize } from '@house-control/visuals';
 import { createWorld } from './vendor/three/world.js';
 import { api, nativeConfig, remoteURL, webosDemo } from './api.js';
 import { ABOUT, DONATIONS, SUPPORT_INTRO } from './support.js';

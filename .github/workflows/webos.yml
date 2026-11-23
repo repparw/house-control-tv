@@ -17,9 +17,18 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - run: pnpm install --no-frozen-lockfile
+      # Temporary: capture the reproducible lockfile from CI; remove after committing it.
+      - name: Show generated pnpm lockfile
+        run: |
+          echo PNPM_LOCK_BEGIN
+          cat pnpm-lock.yaml
+          echo PNPM_LOCK_END
       - run: node --test webos/*.test.mjs
-      - run: npm run build:webos
+      - run: pnpm run build:webos
       - run: npx --yes --package=@webos-tools/cli@3.2.6 ares-package dist --outdir ../.local/webos
       - uses: actions/upload-artifact@v4
         with:

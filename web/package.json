@@ -1,1 +1,21 @@
-{"name":"house-control-tv","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build --base=./","build:webos":"vite build --mode webos --base=./ && node webos/package.mjs"},"dependencies":{"three":"0.186.1","lucide":"0.544.0","qrcode":"1.5.4"},"devDependencies":{"vite":"8.3.4"}}
+{
+  "name": "house-control-tv",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build --base=./",
+    "build:webos": "vite build --mode webos --base=./ && node webos/package.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1",
+    "lucide": "0.544.0",
+    "qrcode": "1.5.4",
+    "@house-control/visuals": "github:repparw/house-control#5343c233220dadcbf8a75726c701372c18c17349&path:web/packages/visuals"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  },
+  "packageManager": "pnpm@10.28.1"
+}
