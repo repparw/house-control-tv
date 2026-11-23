@@ -6,7 +6,7 @@ This branch ports the upstream Three.js TV interface to a standalone webOS appli
 
 - Tested on an LG C3 with webOS 11.2.0: 3D demo renders with WebGL 2, floor-plan import, D-pad, OK, Back, and Magic Remote pointer. Luma hides and suspends the separate app correctly.
 - Implemented but **not yet tested on the TV**: direct Home Assistant WebSocket authentication, live light/switch/climate state, scene/device actions, and automatic reconnect after connection loss.
-- Not ported: persistent secure credentials, Smart Life/Tuya, Hue, the phone companion, Mac auto-sync, and Luma's live Home-screen widget. Existing plans and upstream scene format remain supported.
+- Manual TV setup supports protected credential storage where Keymanager3 is available. Phone QR setup is deferred. Smart Life/Tuya, Hue, the phone companion, Mac auto-sync and the Luma Home widget are outside this release. Existing plans and upstream scene format remain supported.
 
 ## Build
 
@@ -28,7 +28,7 @@ The CI workflow also uploads a downloadable `house-control-webos-ipk` artifact f
 3. Live state and commands use Home Assistant's `/api/websocket` endpoint. Existing House Control scenes still apply desired device states using HA service calls.
 4. To return to the isolated demo, choose Disconnect or Reset. No real-device command is sent by the demo adapter.
 
-**Security and current limitations:** The token is kept only in TV-app memory, not in the floor plan or browser storage. Restarting the app requires signing in again. This is intentionally not a finished credential-management solution. The next stage must evaluate LG's keymanager3 API (available on webOS TV 24+) or an app-private webOS JS service for secure persistence, without requiring root. Plain HTTP is limited to private IPv4 and `.local` addresses; use HTTPS elsewhere. Some HA deployments may reject a WebSocket opened from a packaged webOS app; test on a physical TV before relying on this feature. Do not use this experimental build for security-sensitive automations.
+After authentication, the app saves credentials with Keymanager3. If protected storage is unavailable, setup reports a session-only connection. Use HTTPS for an encrypted connection to Home Assistant. Developer Mode installations on stock TVs can expire when the developer session ends.
 
 Only Home Assistant-linked devices currently send real commands. Unsupported providers fail explicitly instead of silently changing the UI. Unlinked devices retain upstream's local simulated behavior.
 
@@ -116,11 +116,9 @@ Use the upstream shared Three.js renderer and floor-plan parser extracted in [ho
 4. **Renderer dependency:** consume upstream `@house-control/visuals` once it is accessible and suitable for the standalone repository. No need to wait for the upstream merge to test HA.
 5. **Release:** test on real webOS hardware, document rootless Developer Mode limitations, publish versioned GitHub Release IPKs, and defer LG Store and full phone companion.
 
-## Shared visuals integration (in progress)
+## Shared visuals integration
 
-Development dependency: the package extracted in [PR #29](https://github.com/0xProbabillity/house-control/pull/29), pinned to source commit `5343c233220dadcbf8a75726c701372c18c17349` with pnpm's Git subdirectory support (`path:web/packages/visuals`).
-
-The parser and provider-link helpers are now consumed from `@house-control/visuals` instead of maintaining a third parser copy. **The 3D canvas still uses the TV-specific renderer temporarily.** It adds transparent backgrounds, daylight settings, a restricted D-pad orbit, render-resolution controls, and performance tuning that the extracted renderer's public API does not yet expose. Replacing that copy requires adapting these behaviors or defining small shared-world hooks, and a real-TV performance check. Do not claim multi-floor rendering support in the TV frontend solely because the parser accepts multi-floor JSON.
+The app uses the floor-plan parser and Three.js world from the pinned [shared visuals extraction](https://github.com/0xProbabillity/house-control/pull/29). A pnpm dependency patch adds TV camera controls, transparent rendering, daylight and lower-cost drawing. Selecting a room focuses its floor.
 
 ## Secure onboarding platform decision
 
@@ -142,29 +140,4 @@ after demonstrating an authenticated, encrypted LAN path on unrooted hardware
 with session expiry, cancellation, and listener shutdown. [LG Developer Support on opening a TCP port](https://forum.webostv.developer.lge.com/t/open-http-server/9585),
 [JS service guide](https://webostv.developer.lge.com/develop/guides/js-service-basics).
 
-### Integration contract
-
-- Instantiate `createHACredentialStore()` from `web/src/webos-credentials.js`
-  once per app. `load()` resolves to `{ url, token }` or `null` for an empty
-  store. It rejects if a saved record cannot be read or authenticated.
-- Call `save({ url, token })` after successful HA authentication. It
-  normalizes the address and verifies a decryption round trip before replacing
-  the record. A rejected save preserves the previous record. Surface failures
-  explicitly. Manual credentials may be held in memory for the current
-  session.
-- Call `clear()` on explicit disconnect or reset that forgets credentials.
-  It deletes the key and then removes the ciphertext. If it rejects, surface
-  the failure and keep the live HA connection closed. During suspend, close
-  the WebSocket and retain the protected record.
-- Mount `createHASetupForm({ connect, onConnected })` from
-  `web/src/webos-setup.js` in the webOS setup dialog. `connect` receives
-  `{ url, token }` and returns a result with `persisted: true` only after a
-  successful store write. Keep the form visible long enough to communicate
-  session-only success, or pass that status to the parent dialog before
-  closing it. The UI can use the existing plan-import flow independently.
-
-The isolated modules require no package manifest or lockfile changes.
-Hardware validation still needs a stock Developer Mode install, a save and
-reload across an app restart, and a disconnect followed by another restart.
-`webos/credentials.test.mjs` exercises the storage contract with a simulated
-Keymanager3 service. LG lists Keymanager3 as unavailable in the emulator.
+This release uses manual entry on the TV. Disconnect removes the app-owned key and encrypted record.
