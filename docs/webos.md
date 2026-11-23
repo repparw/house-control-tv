@@ -41,3 +41,7 @@ Keep standalone app functionality independent of Luma. After it works and is tes
 ## Earlier C3 measurements
 
 The demo previously rendered 78 draw calls, 21,422 triangles and five textures with antialiasing at a 736 × 502 drawing buffer. These are demo-only measurements, not FPS or whole-process memory benchmarks. Opening Luma suspended its WebGL draw loop and returning resumed it. No device actions were tested during those measurements.
+
+## Compatibility decision (Q11)
+
+Target **webOS TV 24 and newer** for initial secure credential-storage integration. Support older webOS versions where practical, but only if a suitable protected credential store has been verified for them. A missing secure store is not permission to persist Home Assistant tokens in ordinary browser storage or plain files. Root access must never be required for the standalone application. QR onboarding and storage mechanisms remain subject to real-TV validation.
