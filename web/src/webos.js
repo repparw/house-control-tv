@@ -127,7 +127,7 @@ function makeHome(plan, options = {}) {
         // Local-only state survives only when the device stayed simulated and compatible.
         if (!newLink && !oldLink) copyStateFields(next.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
         // A linked display value may be retained as last-known presentation, never as authority.
-        if (newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
+        if (oldState?.known && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
           copyStateFields(next.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
           next.state[section][device.id].known = true;
           next.state[section][device.id].stale = true;
@@ -160,7 +160,7 @@ function restoreCachedState() {
       const newLink = linkOf(device);
       if (!newLink && !oldLink) {
         copyStateFields(home.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
-      } else if (newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
+      } else if (oldState?.known && newLink?.service === 'homeassistant' && oldLink?.service === 'homeassistant' && oldLink.id === newLink.id) {
         copyStateFields(home.state[section][device.id], oldState, section === 'lights' ? LIGHT_STATE_KEYS : AC_STATE_KEYS);
         home.state[section][device.id].known = true;
         home.state[section][device.id].stale = true;
@@ -169,11 +169,22 @@ function restoreCachedState() {
   }
 }
 
+let saveScheduled = false;
 function saveCachedState() {
-  if (!home) return;
-  try {
-    storage()?.setItem(STATE_KEY, JSON.stringify({ version: 1, plan: home.plan, state: home.state }));
-  } catch { /* Presentation caching is best effort and never stores credentials. */ }
+  if (!home || saveScheduled) return;
+  saveScheduled = true;
+  queueMicrotask(() => {
+    saveScheduled = false;
+    if (!home) return;
+    globalThis.window?.dispatchEvent(new Event('weboshomechange'));
+    try {
+      const state = structuredClone(home.state);
+      for (const pending of pendingCommands.values()) {
+        Object.assign(state[pending.section][pending.id], pending.authority);
+      }
+      storage()?.setItem(STATE_KEY, JSON.stringify({ version: 1, plan: home.plan, state }));
+    } catch { /* Presentation caching is best effort. */ }
+  });
 }
 
 async function loadHome() {
@@ -240,6 +251,10 @@ function refreshLinkedStates(applyAuthority = ha?.connected === true) {
       }
       const reading = haReading(haStates.get(link.id));
       const part = reading?.[section === 'lights' ? 'light' : 'ac'];
+      if (applyAuthority && section === 'acs' && device.sensor?.service === 'homeassistant') {
+        const value = haReading(haStates.get(device.sensor.id))?.temperature;
+        if (Number.isFinite(value)) state.roomTemp = value;
+      }
       if (applyAuthority && reading?.online && part) {
         Object.assign(state, part);
         state.known = true;
@@ -268,6 +283,7 @@ function refreshLinkedStates(applyAuthority = ha?.connected === true) {
 function setHAState(state) {
   if (!state?.entity_id) return;
   haStates.set(state.entity_id, state);
+  if (!ha?.connected) return; // The initial snapshot is applied once after authentication.
   refreshLinkedStates(ha?.connected === true);
   const config = normalize(home.plan);
   for (const [section, devices] of [['lights', config.lights], ['acs', config.acs]]) {
@@ -346,6 +362,7 @@ function handleConnectionFailure(generation, error) {
 }
 
 async function startHA(generation) {
+  haStates.clear();
   const previous = ha;
   const client = new HAConnection();
   ha = client;
@@ -652,6 +669,7 @@ async function performChange(item) {
   const completion = new Promise((res, rej) => { resolve = res; reject = rej; });
   const pending = {
     key, section, id: device.id, name: device.name, patch: diff,
+    authority: reading[section === 'lights' ? 'light' : 'ac'],
     startedAt: Date.now(), serviceSettled: false, confirmed: false,
     resolve, reject, timer: null,
   };
@@ -775,11 +793,13 @@ function runBatch(operation, items, options = {}) {
     finishOperation(operation, []);
     return;
   }
+  const originalHome = home;
   const attempts = items.map(item => performChange(item).then(
     () => ({ ok: true, item }),
     error => ({ ok: false, item, error }),
   ));
   void Promise.all(attempts).then(async results => {
+    if (home !== originalHome) return;
     const failures = results.filter(result => !result.ok).map(result => operationFailure(result.item, result.error));
     if (options.scene && ha?.connected && items.some(item => linkOf(item.device)?.service === 'homeassistant')) {
       try { await ha.snapshot(); }
@@ -799,6 +819,7 @@ function runBatch(operation, items, options = {}) {
         }
       }
     }
+    if (home !== originalHome) return;
     if (options.scene && !failures.length && options.sceneId) home.state.scene = options.sceneId;
     if (options.scene && failures.length) home.state.scene = null;
     finishOperation(operation, failures);
@@ -909,6 +930,7 @@ async function importPlan(raw, confirmed) {
   catch (error) { throw new WebOSError(error.message, 'PLAN_INVALID'); }
   try { storage()?.setItem(PLAN_KEY, JSON.stringify(raw)); }
   catch { throw new WebOSError('The new floor plan could not be saved. The current plan was not changed.', 'PLAN_STORAGE_FAILED'); }
+  failAllPending('Floor plan was replaced.');
   home = next;
   if (ha?.connected) setConnectionStatus('connected', 'Home Assistant connected');
   else if (foreground && haCredentials) setConnectionStatus('offline', 'Home Assistant offline. Retrying connection.');

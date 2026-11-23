@@ -22,7 +22,7 @@ const modes = { cool: 'Cooling', heat: 'Heating', auto: 'Auto', dry: 'Dry', fan:
 let config, bundle, world, resizeObserver, deviceKind = 'lights', room = 'all', online = false, demo = false, busy = false, orbiting = false, modal = null, lastFocus = null;
 let store = { state: { lights: {}, acs: {}, scene: null }, listeners: new Set(), on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); } };
 let lightNodes = new Map(), acNodes = new Map(), sceneNodes = new Map();
-let toastTimer;
+let toastTimer, reportedOperation;
 // Small TV chips (2 GB, 4 cores) draw the 3D view at a lower internal resolution; the UI stays sharp.
 const RES=(navigator.deviceMemory||4)<=2||(navigator.hardwareConcurrency||8)<=4?0.62:1;
 function toast(message) { const n = $('#toast'); if (!n) return; n.textContent = message; n.classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => n.classList.remove('visible'), 4500); }
@@ -31,9 +31,18 @@ function apply(next) {
   bundle = next; online = !!(next.controlReady ?? next.macOnline);
   const changed = JSON.stringify(store.state) !== JSON.stringify(next.state);
   store.state = structuredClone(next.state); if (changed) emit(); update();
+  if (webosDemo) {
+    const op = next.operation;
+    if (op?.finishedAt && op.failed && op.id !== reportedOperation) {
+      reportedOperation = op.id;
+      toast([op.message, ...op.failures.map(f => f.name + ': ' + f.message)].join(' · '));
+    }
+    return;
+  }
   try { localStorage.setItem('house-tv:last-home:v1', JSON.stringify(next)); } catch {}
 }
-function available() { return demo || online; }
+function available() { return webosDemo || demo || online; }
+function deviceStatus(s) { return s.pending ? 'Pending' : s.error || (s.simulated ? 'Simulated' : s.status); }
 async function command(action) {
   if (busy) return;
   if (!available()) { toast(bundle?.mode === 'standalone' ? (bundle.connectionLabel || 'Connect your devices') + ' in Sync & connect.' : 'Open House Control and TV Bridge on your Mac to control devices.'); return; }
@@ -52,9 +61,9 @@ async function command(action) {
       }
       emit(); update();
     } else {
-      const result = await api(bundle?.mode==='demo'?'/api/demo/action':'/api/action', action); apply(result.home);
+      const result = await api(!webosDemo && bundle?.mode==='demo'?'/api/demo/action':'/api/action', action); apply(result.home);
       // The switch, the model and the summary already show a change; only a target saved for an infrared AC needs saying.
-      if (result.direct && action.kind === 'acTarget') toast('Temperature saved on TV');
+      if (!webosDemo && result.direct && action.kind === 'acTarget') toast('Temperature saved on TV');
     }
   } catch (error) { toast(error.message); }
   finally { busy = false; app.classList.remove('pending'); }
@@ -105,6 +114,7 @@ function update() {
   if (!config || !$('#status')) return;
   const on = Object.values(store.state.lights).filter(s => s.on).length;
   $('#status').textContent = (demo || bundle?.mode === 'demo') ? 'Demo · no real devices' : bundle?.mode === 'standalone' ? (bundle.connectionLabel || (online ? 'TV · Smart Life connected' : 'Connect Smart Life on TV')) : online ? 'Synced with Mac' : 'Mac offline · view only';
+  if (webosDemo && bundle?.connection) $('#status').textContent = bundle.connection.label;
   $('#status').classList.toggle('offline', !online && !demo);
   const acOn = Object.values(store.state.acs).filter(s => s.on).length;
   const sceneName = config.scenes.find(s => s.id === store.state.scene)?.name;
@@ -117,7 +127,8 @@ function update() {
     n.b.classList.toggle('on', s.on); n.b.setAttribute('aria-pressed', String(s.on));
     n.b.setAttribute('aria-label', `${config.lights.find(d=>d.id===id).name}, ${s.on ? 'on' : 'off'}`);
     n.detail.textContent = (room === 'all' ? roomName(config.lights.find(d=>d.id===id).room) + ' · ' : '') + (s.on ? 'On' : 'Off');
-    n.b.disabled = !available();
+    if (webosDemo) n.detail.textContent += ' · ' + deviceStatus(s);
+    n.b.disabled = webosDemo ? !s.controlEnabled : !available();
   }
   for (const [id, n] of acNodes) {
     const s = store.state.acs[id]; if (!s) continue;
@@ -126,7 +137,9 @@ function update() {
     n.target.replaceChildren(document.createTextNode(s.target), el('span', '', '°'));
     n.mode.textContent = s.on ? modes[s.mode] || s.mode : 'Off';
     n.current.textContent = Number.isFinite(s.roomTemp) ? `${Math.round(s.roomTemp * 10) / 10}° in room` : 'No sensor';
-    n.power.disabled = !available(); n.minus.disabled = !available() || s.target <= d.min; n.plus.disabled = !available() || s.target >= d.max;
+    if (webosDemo) n.mode.textContent += ' · ' + deviceStatus(s);
+    const disabled = webosDemo ? !s.controlEnabled : !available();
+    n.power.disabled = disabled; n.minus.disabled = disabled || s.target <= d.min; n.plus.disabled = disabled || s.target >= d.max;
   }
   for (const [id, b] of sceneNodes) { b.classList.toggle('active', id === store.state.scene); b.setAttribute('aria-pressed', id === store.state.scene); b.disabled = !available(); }
   $('#all-off').disabled = !available();
@@ -253,7 +266,8 @@ async function openWebosDemo() {
   } else {
     panel.append(createHASetupForm({
       async connect(input) {
-        await api('/api/webos/ha/connect', input);
+        const connection = await api('/api/webos/ha/connect', input);
+        if (!connection.connected) throw new Error('Return to the app to complete setup.');
         try {
           await credentials.save(input);
           return { persisted: true };
@@ -278,8 +292,9 @@ async function openWebosDemo() {
     try {
       if (selected.size > 512 * 1024) throw new Error('Floor plan must be 512 KiB or less.');
       const payload = JSON.parse(await selected.text());
-      const plan = normalize(payload?.plan ?? payload);
-      if (modal === connections) confirmImport(payload, plan.name);
+      const plan = payload?.plan ?? payload;
+      const preview = await api('/api/webos/plan/preview', { plan });
+      if (modal === connections) confirmImport(plan, preview.plan.name);
     } catch (error) {
       message.textContent = error.message;
     } finally {
@@ -312,7 +327,7 @@ async function openWebosDemo() {
       cancel.disabled = replace.disabled = true;
       confirmation.focus();
       try {
-        await api('/api/import', payload);
+        await api('/api/import', { plan: payload, confirm: true });
       } catch (error) {
         message.textContent = error.message;
         if (modal === connections) returnToConnections();
@@ -515,18 +530,22 @@ function showSetup(error){
 async function boot(){
   try {const next=await api('/api/home');config=normalize(next.plan);bundle=next;online=!!(next.controlReady ?? next.macOnline);store.state=next.state;render();apply(next);}
   catch(error){console.warn('TV_BOOT',error.message);let cached;try{cached=JSON.parse(localStorage.getItem('house-tv:last-home:v1'));}catch{}if(cached){config=normalize(cached.plan);bundle=cached;store.state=cached.state;online=false;render();toast('Showing your saved home. Open Sync & connect to check the TV connection.');}else showSetup(error);}
-  clearTimeout(pollTimer);pollTimer=setTimeout(poll,1800);
+  if (!webosDemo) { clearTimeout(pollTimer);pollTimer=setTimeout(poll,1800); }
 }
 let pollTimer;
 async function poll(){
   if(!demo&&!document.hidden&&!busy)try{const next=await api('/api/home');if(!config||bundle?.revision!==next.revision){world?.dispose();room='all';config=normalize(next.plan);store.state=next.state;bundle=next;online=!!(next.controlReady ?? next.macOnline);render();}apply(next);}catch(error){if(online)console.warn('TV_CONNECTION',error.message);online=false;update();}
   pollTimer=setTimeout(poll,1800);
 }
+if (webosDemo) window.addEventListener('weboshomechange', async () => {
+  const next = await api('/api/home');
+  if (config && next.revision === bundle?.revision) apply(next);
+});
 boot().then(async () => {
   if (!webosDemo) return;
   try {
     const saved = await credentials.load();
-    if (saved && !document.hidden) {
+    if (saved) {
       await api('/api/webos/ha/connect', saved);
       apply(await api('/api/home'));
     }

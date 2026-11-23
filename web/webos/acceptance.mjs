@@ -113,11 +113,9 @@ function pixelDifference(a, b) {
 
 async function exercise({ send, events }, url, fixture) {
   const errors = [];
-  const dialogs = [];
   events.addEventListener('Runtime.exceptionThrown', ({ detail: { exceptionDetails } }) => {
     errors.push(exceptionDetails.exception?.description ?? exceptionDetails.text);
   });
-  events.addEventListener('Page.javascriptDialogOpening', ({ detail }) => dialogs.push(detail));
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', {
@@ -181,16 +179,11 @@ async function exercise({ send, events }, url, fixture) {
   const { root } = await send('DOM.getDocument');
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: fileInput });
   // Setting the file through CDP drives the normal input/change and confirmation flow.
-  const [, dialog] = await Promise.all([
-    send('DOM.setFileInputFiles', { nodeId, files: [fixture] }),
-    (async () => {
-      const opened = await until('import confirmation', () => dialogs.shift());
-      await send('Page.handleJavaScriptDialog', { accept: opened.type === 'confirm' });
-      return opened;
-    })(),
-  ]);
-  assert.equal(dialog.type, 'confirm');
-  assert.match(dialog.message, /replace the current floor plan/i);
+  await send('DOM.setFileInputFiles', { nodeId, files: [fixture] });
+  await until('import confirmation', () => focusIs('Cancel'));
+  assert.ok(await textIs('#webos-import-description', 'Replace the current floor plan with “Two-floor acceptance home”?'));
+  await move('ArrowRight', 39, 'Replace floor plan');
+  await press('Enter', 13);
   await until('imported room tabs and reset focus', async () =>
     await focusIs('Whole home') && await textIs('nav button:last-child', 'Upper room'));
 
@@ -282,7 +275,7 @@ try {
   await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   browser = spawn(process.env.CHROMIUM || 'chromium', [
-    '--headless', '--no-first-run', '--disable-background-networking', '--disable-component-update',
+    '--headless', '--ozone-platform=headless', '--no-first-run', '--disable-background-networking', '--disable-component-update',
     '--proxy-server=http://127.0.0.1:1', '--remote-debugging-address=127.0.0.1',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank',
