@@ -92,3 +92,8 @@ Importing a new valid House Control floor-plan JSON **replaces the existing plan
 ## Optimistic device controls (Q20)
 
 For linked devices with a live Home Assistant connection, update the displayed device state **optimistically** as soon as the user issues a control command. Mark it as pending until confirmed by Home Assistant's resulting state update. If HA returns an error, the command times out, or the reported authoritative state differs from the requested state, reconcile the UI to HA's actual state and show a concise failure or correction message. Do not leave a stale optimistic state presented as confirmed. New commands must not overwrite newer authoritative events due to out-of-order responses; handle rapid successive commands and disconnects safely. No optimistic real-device actions are allowed while offline (Q14). Simulated devices update immediately without HA confirmation (Q15).
+
+
+## Home Assistant state synchronization (Q21)
+
+While House Control is foregrounded and connected, subscribe to Home Assistant's WebSocket `state_changed` events for live device updates. On every initial connection and reconnection, obtain a full state snapshot and reconcile any events arriving during snapshot retrieval, so that older snapshot values cannot overwrite newer events. Do not poll continuously or run background reconciliation. On disconnect, retain last-known display state but mark it stale and reject real-device commands (Q14). Pending optimistic commands (Q20) must reconcile against authoritative events, command failures, and timeouts.
