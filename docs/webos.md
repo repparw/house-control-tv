@@ -102,3 +102,16 @@ While House Control is foregrounded and connected, subscribe to Home Assistant's
 ## Release distribution (Q22)
 
 Publish reproducible webOS `.ipk` artifacts through **GitHub Releases first**. The initial test and installation paths are LG Developer Mode on unrooted TVs and the user's existing root-enabled C3 without changing its root/developer-mode configuration. Clearly document that Developer Mode installations can expire or be removed when the developer session ends. **LG Content Store / Seller Lounge submission is a later milestone**, not a condition of the initial release. Keep the build and packaging process suitable for eventual official submission.
+
+
+## Renderer reuse (Q23)
+
+Use the upstream shared Three.js renderer and floor-plan parser extracted in [house-control PR #29](https://github.com/0xProbabillity/house-control/pull/29). **Do not develop a separate webOS rendering fork.** Continue device-integration and packaging work while PR #29 is pending, then replace the currently vendored renderer when the shared package can be consumed reliably by this independent repository. Keep webOS-specific input/lifecycle and provider connection code separate from the shared renderer.
+
+## Implementation sequence after grilling
+
+1. **Device smoke test:** install the CI-generated IPK on the existing C3 without altering root or Developer Mode; verify WebGL render, remote navigation, actual HA WebSocket connection, linked device control, and import. Record failures before rewriting platform integration.
+2. **Core behavior:** implement Q13–Q21 across frontend/API, prioritizing foreground-only connection, offline/stale states, optimistic control reconciliation, safe import, scene partial failures/toggle behavior, and clear simulated-device labels. Add focused regression tests for races, disconnects, and partial failures.
+3. **Secure onboarding:** verify stock unrooted webOS service listener and protected credential storage APIs. Then build local-only short-lived QR form for HA credentials and optional JSON import. Never fall back silently to plaintext credential persistence or unencrypted token transfer.
+4. **Renderer dependency:** consume upstream `@house-control/visuals` once it is accessible and suitable for the standalone repository. No need to wait for the upstream merge to test HA.
+5. **Release:** test on real webOS hardware, document rootless Developer Mode limitations, publish versioned GitHub Release IPKs, and defer LG Store and full phone companion.
