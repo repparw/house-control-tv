@@ -133,5 +133,5 @@ test('uses the official Luna bridge and ignores platform error text', async t =>
   assert.deepEqual(await store.load(), normalized);
   platform.fail('removeKey');
   await assert.rejects(store.clear(), { message: 'Protected Home Assistant storage is unavailable.' });
-  assert.deepEqual(await store.load(), normalized);
+  assert.equal(await store.load(), null);
 });

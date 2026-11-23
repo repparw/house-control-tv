@@ -247,7 +247,7 @@ async function openWebosDemo() {
   if (haStatus.connected || haStatus.reconnecting) {
     panel.append(el('p','sync-state',haStatus.connected?'Home Assistant connected · '+haStatus.url:'Home Assistant offline · reconnecting automatically'));
     panel.append(button('Disconnect Home Assistant','Power',async()=>{
-      try {await credentials.clear();await api('/api/webos/ha/disconnect',{});closeModal();world?.dispose();config=null;room='all';await boot();}
+      try {await api('/api/webos/ha/disconnect',{});await credentials.clear();closeModal();world?.dispose();config=null;room='all';await boot();}
       catch(error){message.textContent=error.message;}
     },'secondary'));
   } else {
@@ -343,7 +343,7 @@ async function openWebosDemo() {
   }
   panel.append(el('p','sync-note','Import floor plan JSON'),file,message,
     button('Back to home','ArrowLeft',closeModal,'secondary'),
-    button('Reset bundled demo','RefreshCw',()=>switchDemo(true),'secondary'));
+    button('Reset bundled demo','RefreshCw',()=>switchDemo(true).catch(error=>{message.textContent=error.message;}),'secondary'));
   modal.append(panel);document.body.append(modal);panel.querySelector('button')?.focus();
 }
 async function switchDemo(enabled){if(webosDemo) await credentials.clear();await api('/api/demo',{enabled});closeModal();world?.dispose();config=null;await boot();}

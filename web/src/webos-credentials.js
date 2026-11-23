@@ -128,13 +128,14 @@ export function createHACredentialStore({ request = requestKeymanager, storage }
     },
 
     clear: () => run(async disk => {
+      const saved = disk.getItem(RECORD) !== null;
+      disk.removeItem(RECORD);
       // Removing the owning key also invalidates old copies of the ciphertext.
       try {
         await request('removeKey', { name: KEY });
       } catch (error) {
-        if (error.code !== -10001 && disk.getItem(RECORD) !== null) throw error;
+        if (error.code !== -10001 && saved) throw error;
       }
-      disk.removeItem(RECORD);
     }),
   };
 }
