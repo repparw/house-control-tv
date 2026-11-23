@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@house-control/visuals@0.0.0': patches/@house-control__visuals@0.0.0.patch

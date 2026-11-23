@@ -1,0 +1,442 @@
+diff --git a/src/three/world.js b/src/three/world.js
+--- a/src/three/world.js
++++ b/src/three/world.js
+@@ -13,24 +13,54 @@
+ 
+ const rad = THREE.MathUtils.degToRad;
+ const clamp = THREE.MathUtils.clamp;
+-const EL_MIN = 6;          // almost level with the floor
+-const EL_MAX = 89;         // straight down, short of where "up" stops meaning anything
+-const ZOOM_MIN = 0.3;      // closest
+-const ZOOM_MAX = 1.2;
+ const PAN_MARGIN = 1;      // metres the view's centre may go past the edge of the floor
+ const PAN_TILT_MIN = 0.35; // keeps a two-finger drag sane when looking almost along the floor
+ 
+-export function createWorld(canvas, config, store, { onHover, onPick, onLevel = () => {}, onView = () => {}, level: firstLevel, background = STAGE_BG }) {
+-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
++// `options` are intentionally small hooks rather than a second renderer. They let a TV,
++// widget or other embedder keep its own lifecycle, input limits and performance budget
++// while sharing the scene, camera and picking code with the main web app.
++export function createWorld(canvas, config, store, {
++  onHover, onPick, onLevel = () => {}, onView = () => {},
++  level: firstLevel, background = STAGE_BG,
++  presentationAspect = null,
++  resolution = () => 1,
++  maxPixelRatio = 2,
++  clock = () => performance.now(),
++  renderer: rendererOptions = {},
++  effects = true,
++  shadows = true,
++  lampShadows = true,
++  shadowMapSize = 2048,
++  frameInterval = 0,
++  orbitLimit = null,
++  elevationRange = [6, 89],
++  zoomRange = [0.3, 1.2],
++  allowPan = true,
++  staticWalls = false,
++  staticShadows = false,
++  batchStatic = null,
++}) {
++  const transparent = background === 'transparent';
++  const renderer = new THREE.WebGLRenderer({
++    canvas, antialias: false, alpha: transparent, powerPreference: 'high-performance', ...rendererOptions,
++  });
++  const pixelRatio = () => Math.min(window.devicePixelRatio || 1, maxPixelRatio)
++    * Math.max(0.25, Math.min(1, resolution()));
++  renderer.setPixelRatio(pixelRatio());
+   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+   renderer.toneMappingExposure = 1.05;
+-  renderer.shadowMap.enabled = true;
++  renderer.shadowMap.enabled = shadows !== false;
+   renderer.shadowMap.type = THREE.PCFShadowMap;
+   renderer.shadowMap.autoUpdate = false; // the model is static: shadow maps are rendered once
+ 
++  const EL_MIN = elevationRange[0];
++  const EL_MAX = elevationRange[1];
++  const ZOOM_MIN = zoomRange[0];
++  const ZOOM_MAX = zoomRange[1];
++  let presentation = presentationAspect;
++
+   const scene = new THREE.Scene();
+-  scene.background = new THREE.Color(background);
++  scene.background = transparent ? null : new THREE.Color(background);
+ 
+   const camera = new THREE.PerspectiveCamera(24, 1, 0.5, 120);
+ 
+@@ -43,6 +73,7 @@
+ 
+   const baseAz = config.camera.azimuth;
+   const baseEl = config.camera.elevation;
++  const camDir = new THREE.Vector3(Math.sin(rad(baseAz)), 0, Math.cos(rad(baseAz)));
+ 
+   /* ---------- content ---------- */
+ 
+@@ -53,7 +84,16 @@
+     const group = new THREE.Group();
+     group.position.y = l.elevation;
+     const house = buildHouse(config, l);
+-    group.add(house.group, buildFurniture(config.furniture.filter((f) => f.level === l.id)));
++    // A static embedder can cut the walls once and batch the result into one draw per
++    // material. The unbatched meshes stay in the graph, hidden, for floor picking.
++    if (staticWalls) house.view(camDir.x, camDir.z);
++    const furniture = buildFurniture(config.furniture.filter((f) => f.level === l.id));
++    group.add(batchStatic ? batchStatic(house.group) : house.group);
++    group.add(batchStatic ? batchStatic(furniture) : furniture);
++    if (batchStatic) {
++      house.group.visible = false;
++      group.add(house.group);
++    }
+     scene.add(group);
+     floors.set(l.id, { group, house });
+   }
+@@ -61,13 +101,16 @@
+   const lights = new Map();
+   // A lamp's shadows only change when the walls do, and they are the costly ones: six faces a
+   // lamp. They are drawn on request, the moon's whenever any shadow map is.
+-  const lampShadows = [];
++  const lampShadowMaps = [];
+   for (const cfg of config.lights) {
+     const unit = new LightUnit(cfg, levelById.get(cfg.level).wallHeight);
+     lights.set(cfg.id, unit);
+     floors.get(cfg.level).group.add(unit.group);
+     for (const l of unit.lights) {
+-      if (l.userData.canShadow) { l.shadow.autoUpdate = false; lampShadows.push(l.shadow); }
++      if (l.userData.canShadow) {
++        l.shadow.autoUpdate = false;
++        if (lampShadows) lampShadowMaps.push(l.shadow);
++      }
+     }
+   }
+ 
+@@ -82,6 +125,12 @@
+   const shadowCap = Math.max(1, Math.min(8, renderer.capabilities.maxTextures - 6));
+   // Only the floor on show lights its rooms, so the slots go to its lamps.
+   function assignShadows() {
++    if (!lampShadows) {
++      for (const unit of lights.values()) {
++        for (const l of unit.lights) if (l.userData.canShadow) l.castShadow = false;
++      }
++      return;
++    }
+     const ranked = [...lights.values()].filter((u) => u.cfg.level === level.id).sort((a, b) =>
+       (SHADOW_PRIORITY[a.cfg.type] ?? 9) - (SHADOW_PRIORITY[b.cfg.type] ?? 9));
+     // One lamp per room first, so every room keeps some depth, then fill up to the cap.
+@@ -136,10 +185,11 @@
+   }
+ 
+   // Night-time ambience: enough to read the model with every lamp off.
+-  scene.add(new THREE.HemisphereLight(0x8ea6ff, 0x0b0e17, 0.42));
++  const sky = new THREE.HemisphereLight(0x8ea6ff, 0x0b0e17, 0.42);
++  scene.add(sky);
+   const moon = new THREE.DirectionalLight(0xa9c0ff, 0.6);
+-  moon.castShadow = true;
+-  moon.shadow.mapSize.set(2048, 2048);
++  moon.castShadow = shadows !== false;
++  moon.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+   const sc = moon.shadow.camera;
+   sc.left = sc.bottom = -span * 0.85;
+   sc.right = sc.top = span * 0.85;
+@@ -150,15 +200,21 @@
+   moon.shadow.normalBias = 0.04;
+   moon.shadow.radius = 4;
+   scene.add(moon, moon.target);
++  if (staticShadows) placeMoon(baseAz);
+ 
+   /* ---------- post-processing ---------- */
+ 
+-  const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
+-  const composer = new EffectComposer(renderer, target);
+-  composer.addPass(new RenderPass(scene, camera));
+-  const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0);
+-  composer.addPass(bloom);
+-  composer.addPass(new OutputPass());
++  // Direct rendering skips the HDR bloom and MSAA passes for embeds that cannot afford them.
++  let target = null;
++  let composer = null;
++  if (effects) {
++    target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
++    composer = new EffectComposer(renderer, target);
++    composer.addPass(new RenderPass(scene, camera));
++    composer.addPass(new UnrealBloomPass(new THREE.Vector2(4, 4), 0.34, 0.5, 1.0));
++    composer.addPass(new OutputPass());
++  }
++  const draw = (dt) => (composer ? composer.render(dt) : renderer.render(scene, camera));
+ 
+   /* ---------- camera rig ---------- */
+ 
+@@ -169,11 +225,14 @@
+     pan: new THREE.Vector3(), // the view's centre, moved off what it is framing
+     framed: center.clone(),   // the centre of what it is framing
+   };
++  let cinematic = null;
+   // Where the person has put the camera: a room is framed from this angle, and leaving a room
+   // or a device goes back to this whole view.
+   const home = { az: baseAz, el: baseEl, zoom: 1, pan: new THREE.Vector3() };
+   // The same direction as `az`, the fewest degrees from `from`, so a full turn is not unwound.
+   const nearestAz = (az, from) => from + ((((az - from) % 360) + 540) % 360) - 180;
++  // D-pad and pointer input stay inside the plan's own view when an embedder asks for it.
++  const clampAz = (az) => (orbitLimit == null ? az : clamp(az, baseAz - orbitLimit, baseAz + orbitLimit));
+   let width = 1;
+   let height = 1;
+   let topInset = 0;    // pixels at the top covered by the header
+@@ -266,6 +325,28 @@
+   }
+ 
+   function updateRig(dt, instant = false) {
++    if (instant) cinematic = null;
++    if (cinematic) {
++      // A scripted move for a widget or an embedder: interpolate the camera, not the state.
++      const p = clamp((clock() - cinematic.start) / cinematic.duration, 0, 1);
++      const e = p * p * (3 - 2 * p);
++      const from = cinematic.from;
++      const to = rig.goal;
++      if (presentation) {
++        camera.aspect = THREE.MathUtils.lerp(cinematic.aspect, width / height, e);
++        camera.updateProjectionMatrix();
++      }
++      rig.az = THREE.MathUtils.lerp(from.az, to.az, e);
++      rig.el = THREE.MathUtils.lerp(from.el, to.el, e);
++      rig.dist = THREE.MathUtils.lerp(from.dist, to.dist, e);
++      rig.target.lerpVectors(from.target, to.target, e);
++      basis(rig.az, rig.el);
++      camera.position.copy(rig.target).addScaledVector(fwd, -rig.dist);
++      camera.up.set(0, 1, 0);
++      camera.lookAt(rig.target);
++      if (p >= 1) cinematic = null;
++      return p < 1;
++    }
+     // Two fingers move the model with them, so it stays under them; the rest glides.
+     const held = pinch || magnify || performance.now() < wheelUntil;
+     const k = instant ? 1 : 1 - Math.exp(-dt * (held ? 28 : 5.5));
+@@ -280,14 +361,17 @@
+     camera.position.copy(rig.target).addScaledVector(fwd, -rig.dist);
+     camera.up.set(0, 1, 0);
+     camera.lookAt(rig.target);
+-    const a = rad(rig.az);
+-    for (const { house } of floors.values()) house.view(Math.sin(a), Math.cos(a));
+-    placeMoon(rig.az);
++    if (!staticWalls) {
++      const a = rad(rig.az);
++      for (const { house } of floors.values()) house.view(Math.sin(a), Math.cos(a));
++    }
++    if (!staticShadows) placeMoon(rig.az);
+     return delta > 0.002;
+   }
+ 
+   // The outer walls follow the camera. The shadows wait for it to stop, so turning never stutters.
+   function updateWalls(dt) {
++    if (staticWalls) return false;
+     let active = false;
+     for (const { house } of floors.values()) {
+       const state = house.update(dt);
+@@ -398,7 +482,8 @@
+   function zoomTo(zoom, spot, m) {
+     rig.zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
+     frameGoal();
+-    holdSpot(spot, m);
++    if (allowPan) holdSpot(spot, m);
++    else { userMoved(); wake(); }
+   }
+   function startPinch() {
+     pinch = { fingers: Math.min(2, fingers.size), spread: spread(), zoom: rig.zoom, spot: spotAt(between()) };
+@@ -430,7 +515,7 @@
+       const dy = ev.clientY - drag.y;
+       if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; setHover(null); canvas.style.cursor = 'grabbing'; }
+       if (drag.moved) {
+-        rig.goal.az = drag.az - dx * 0.35;
++        rig.goal.az = clampAz(drag.az - dx * 0.35);
+         rig.goal.el = clamp(drag.el + dy * 0.3, EL_MIN, EL_MAX);
+         frameGoal();
+         userMoved();
+@@ -473,7 +558,7 @@
+     ev.preventDefault();
+     const held = ev.ctrlKey || ev.metaKey;
+     const notch = ev.deltaMode === 1 || (ev.deltaX === 0 && ev.wheelDeltaY !== 0 && ev.wheelDeltaY % 120 === 0);
+-    if (ev.timeStamp - wheelAt > 160) wheelMode = notch ? 'zoom' : 'pan';
++    if (ev.timeStamp - wheelAt > 160) wheelMode = !allowPan || notch ? 'zoom' : 'pan';
+     wheelAt = ev.timeStamp;
+     wheelUntil = performance.now() + 200;
+     const unit = ev.deltaMode === 1 ? 16 : 1;
+@@ -508,6 +593,7 @@
+ 
+   let raf = 0;
+   let last = 0;
++  let drawn = 0;
+   let awake = 0;       // frames still owed after the last change
+   let running = false;
+   let shadowAz = baseAz; // where the moon was when its shadows were last drawn
+@@ -519,14 +605,17 @@
+ 
+   function frame(now) {
+     raf = 0;
++    // A small TV chip does not need 60 fps for a mostly static model.
++    if (frameInterval && now - drawn < frameInterval) { raf = requestAnimationFrame(frame); return; }
++    drawn = now;
+     const dt = Math.min(0.05, (now - last) / 1000);
+     last = now;
+     let active = updateRig(dt);
+     active = updateWalls(dt) || active;
+     for (const unit of lights.values()) active = unit.update(dt) || active;
+     for (const unit of acs.values()) active = unit.update(dt) || active;
+-    if (shadowFrames > 0 || (!active && (wallsMoved || Math.abs(rig.az - shadowAz) > 1))) {
+-      if (shadowFrames > 0 || wallsMoved) for (const shadow of lampShadows) shadow.needsUpdate = true;
++    if (shadowFrames > 0 || (!active && (wallsMoved || (!staticShadows && Math.abs(rig.az - shadowAz) > 1)))) {
++      if (shadowFrames > 0 || wallsMoved) for (const shadow of lampShadowMaps) shadow.needsUpdate = true;
+       renderer.shadowMap.needsUpdate = true;
+       shadowFrames = Math.max(0, shadowFrames - 1);
+       wallsMoved = false;
+@@ -534,7 +623,7 @@
+       active = true;
+     }
+     if (active || awake > 0) {
+-      composer.render(dt);
++      draw(dt);
+       awake = Math.max(0, awake - 1);
+       if (hovered && active) onHover({ ...hovered, ...screenAnchor(hovered) });
+     }
+@@ -546,14 +635,21 @@
+     if (!r.width || !r.height) return;
+     width = r.width;
+     height = r.height;
+-    const pr = Math.min(window.devicePixelRatio || 1, 2);
++    const pr = pixelRatio();
+     renderer.setPixelRatio(pr);
+     renderer.setSize(width, height, false);
+-    composer.setPixelRatio(pr);
+-    composer.setSize(width, height);
++    if (composer) {
++      composer.setPixelRatio(pr);
++      composer.setSize(width, height);
++    }
+     camera.aspect = width / height;
+-    // Centre the model between header and panel by shifting the projection window.
+-    camera.setViewOffset(width, height, 0, -(topInset - bottomInset) / 2, width, height);
++    if (presentation) {
++      camera.clearViewOffset();
++      camera.aspect = presentation;
++    } else {
++      // Centre the model between header and panel by shifting the projection window.
++      camera.setViewOffset(width, height, 0, -(topInset - bottomInset) / 2, width, height);
++    }
+     camera.updateProjectionMatrix();
+     frameGoal();
+     wake(3);
+@@ -566,6 +662,82 @@
+     setInsets(top, bottom) { topInset = top; bottomInset = bottom; resize(); },
+     resize,
+ 
++    setZoom(z) {
++      rig.zoom = clamp(z, ZOOM_MIN, ZOOM_MAX);
++      frameGoal();
++      wake();
++    },
++
++    // The widget draws a fixed camera aspect while its canvas is still settling.
++    setPresentationAspect(aspect) {
++      presentation = aspect;
++      resize();
++    },
++
++    // A plan point in 0..1 screen space, for widget overlays and camera flights.
++    project(point) {
++      v.set(point.x, point.y, point.z).project(camera);
++      return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 };
++    },
++
++    stats() {
++      return {
++        calls: renderer.info.render.calls,
++        triangles: renderer.info.render.triangles,
++        geometries: renderer.info.memory.geometries,
++        textures: renderer.info.memory.textures,
++        drawingBuffer: [canvas.width, canvas.height],
++        antialias: renderer.getContext().getContextAttributes().antialias,
++        maxSamples: renderer.getContext().getParameter(renderer.getContext().MAX_SAMPLES),
++      };
++    },
++
++    // Daylight: a bright neutral sky and a warm sun, for pale backgrounds. Night: a cool moon.
++    setDaylight(day, instant = false) {
++      if (day) {
++        sky.color.set(0xf4f6ff); sky.groundColor.set(0x8d877e); sky.intensity = 1.35;
++        moon.color.set(0xfff0dc); moon.intensity = 1.55; renderer.toneMappingExposure = 1.0;
++      } else {
++        sky.color.set(0x8ea6ff); sky.groundColor.set(0x0b0e17); sky.intensity = 0.42;
++        moon.color.set(0xa9c0ff); moon.intensity = 0.6; renderer.toneMappingExposure = 1.05;
++      }
++      renderer.shadowMap.needsUpdate = true;
++      shadowFrames = Math.max(shadowFrames, 1);
++      if (!instant) wake(3);
++    },
++
++    // D-pad and other button-driven rotation, clamped by `orbitLimit`.
++    orbit(dx, dy = 0) {
++      rig.goal.az = clampAz(rig.goal.az + dx);
++      rig.goal.el = clamp(rig.goal.el + dy, EL_MIN, EL_MAX);
++      frameGoal();
++      wake();
++    },
++
++    // A scripted camera move. The caller supplies the target view, not renderer internals.
++    flyTo(view, duration = 1200) {
++      if (view.az != null) rig.goal.az = view.az;
++      if (view.el != null) rig.goal.el = view.el;
++      if (view.dist != null) rig.goal.dist = view.dist;
++      if (view.target) rig.goal.target.set(view.target.x, view.target.y, view.target.z);
++      cinematic = {
++        start: clock(), duration, aspect: camera.aspect,
++        from: { az: rig.az, el: rig.el, dist: rig.dist, target: rig.target.clone() },
++      };
++      running = true;
++      wake(90);
++      return true;
++    },
++
++    // Deterministic sampling for offline demo exports. No device transport is involved.
++    renderFrame(dt = 0) {
++      updateRig(dt);
++      updateWalls(dt);
++      for (const unit of lights.values()) unit.update(dt);
++      for (const unit of acs.values()) unit.update(dt);
++      draw(0);
++    },
++
+     get level() { return level.id; },
+ 
+     // Shows another floor of the home (and the ones under it).
+@@ -575,7 +747,7 @@
+       level = next;
+       showLevel();
+       if (rig.focus && levelOf(rig.focus) !== level.id) rig.focus = null;
+-      placeMoon(rig.az);
++      placeMoon(staticShadows ? baseAz : rig.az);
+       frameGoal();
+       userMoved();
+       wake(4);
+@@ -636,8 +808,9 @@
+       running = false;
+       if (raf) cancelAnimationFrame(raf);
+       raf = 0;
+-      composer.dispose();
+-      target.dispose();
++      composer?.dispose();
++      target?.dispose();
++      scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+       renderer.dispose();
+       renderer.forceContextLoss();
+     },
+@@ -650,9 +823,10 @@
+         for (const unit of lights.values()) unit.update(0.05);
+         for (const unit of acs.values()) unit.update(0.05);
+       }
+-      for (const shadow of lampShadows) shadow.needsUpdate = true;
++      for (const shadow of lampShadowMaps) shadow.needsUpdate = true;
+       renderer.shadowMap.needsUpdate = true;
+-      composer.render(0);
++      scene.traverse((o) => { if (o.isPointLight || o.isSpotLight) o.visible = true; });
++      draw(0);
+     },
+   };
+ 

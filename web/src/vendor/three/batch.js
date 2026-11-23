@@ -6,8 +6,8 @@ export function batchStatic(root) {
   root.updateMatrixWorld(true);
   const result = new THREE.Group();
   const buckets = new Map();
-  root.traverse(object => {
-    if (!object.isMesh || !object.visible) return;
+  root.traverseVisible(object => {
+    if (!object.isMesh) return;
     const source = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone();
     const parts = Array.isArray(object.material)
       ? source.groups.map(g => ({ material: object.material[g.materialIndex], start: g.start, count: g.count }))
