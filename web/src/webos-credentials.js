@@ -3,7 +3,7 @@ import { haURL } from './webos-ha.js';
 const URI = 'luna://com.webos.service.keymanager3';
 const KEY = 'house-control-ha-aes-gcm-v1';
 const RECORD = 'house-control-ha-encrypted-v1';
-const AES = { type: 'AES', mode: ['GCM'], padding: ['None'], mac_length: '128' };
+const AES = { type: 'AES', mode: ['GCM'], padding: ['None'] };
 const MAX_PAYLOAD = 8192;
 
 function unavailable() {
@@ -82,7 +82,7 @@ export function createHACredentialStore({ request = requestKeymanager, storage }
   }
 
   async function crypt(purpose, data, iv) {
-    const params = { ...AES, purpose: [purpose] };
+    const params = { ...AES, purpose: [purpose], mac_length: '128' };
     if (iv !== undefined) params.iv = iv;
     const started = await request('begin', { name: KEY, params });
     const { handle } = started;

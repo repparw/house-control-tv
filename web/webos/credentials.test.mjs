@@ -27,6 +27,7 @@ function fakePlatform() {
       if (method === 'generateKey') {
         if (key) throw Object.assign(new Error(), { code: -10002 });
         assert.equal(params.size, 256);
+        assert.equal(params.mac_length, undefined);
         key = randomBytes(32);
       } else if (method === 'begin') {
         assert.deepEqual(params.mode, ['GCM']);
