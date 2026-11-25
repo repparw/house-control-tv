@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build --base=./",
-    "build:webos": "vite build --mode webos --base=./ && node webos/package.mjs"
+    "build:webos": "vite build --mode webos --base=./ && node webos/package.mjs",
+    "lint": "node webos/lint.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test webos/*.test.mjs",
+    "test:acceptance": "node webos/acceptance.mjs",
+    "check": "node --run lint && node --run typecheck && node --run test && node --run build:webos && node --run test:acceptance"
   },
   "dependencies": {
     "three": "0.186.1",
@@ -15,6 +20,7 @@
     "@house-control/visuals": "github:repparw/house-control#fa773b8a53ac672e67dbf730daa3fa6a7647d76c&path:web/packages/visuals"
   },
   "devDependencies": {
+    "typescript": "5.9.3",
     "vite": "8.3.4"
   },
   "packageManager": "pnpm@10.28.1"

@@ -6,23 +6,49 @@ import { createHACredentialStore } from '../src/webos-credentials.js';
 const credentials = { url: 'homeassistant.local', token: 'example-long-lived-token' };
 const normalized = { ...credentials, url: 'http://homeassistant.local:8123' };
 
+// LG's Keymanager3 rejects unknown parameters, so the fake accepts exactly the keys each
+// method takes on hardware. `mac_length` on generateKey broke real TVs (b8fbe50).
+const ALLOWED = {
+  generateKey: { top: ['name', 'params'], params: ['type', 'mode', 'padding', 'size', 'purpose'], required: ['type', 'mode', 'padding', 'size', 'purpose'] },
+  begin: { top: ['name', 'params'], params: ['type', 'mode', 'padding', 'purpose', 'mac_length', 'iv'], required: ['type', 'mode', 'padding', 'purpose', 'mac_length'] },
+  finish: { top: ['handle', 'data'] },
+  abort: { top: ['handle'] },
+  removeKey: { top: ['name'] },
+};
+
+function assertExactKeys(label, value, allowed, required = allowed) {
+  for (const key of Object.keys(value)) assert.ok(allowed.includes(key), `${label} must not send ${key}; Keymanager3 accepts only ${allowed.join(', ')}`);
+  for (const key of required) assert.ok(Object.hasOwn(value, key), `${label} must send ${key}`);
+}
+
+function assertParameters(method, parameters) {
+  const rule = ALLOWED[method];
+  assert.ok(rule, `Keymanager3 method ${method} is not used by the credential store; add it to ALLOWED only after checking LG's API`);
+  assertExactKeys(method, parameters, rule.top);
+  if (rule.params) assertExactKeys(`${method}.params`, parameters.params, rule.params, rule.required);
+}
+
 function fakePlatform() {
   const records = new Map();
+  const writes = [];
   let key;
   let operation;
   let fail;
   const methods = [];
   return {
     records,
+    writes,
     methods,
     fail(method) { fail = method; },
     storage: {
       getItem: id => records.get(id) ?? null,
-      setItem: (id, value) => records.set(id, value),
+      setItem: (id, value) => { writes.push([id, value]); records.set(id, value); },
       removeItem: id => records.delete(id),
     },
-    async request(method, { params, data, handle }) {
+    async request(method, parameters) {
+      const { params, data, handle } = parameters;
       methods.push(method);
+      assertParameters(method, parameters);
       if (method === fail) throw new Error(credentials.token);
       if (method === 'generateKey') {
         if (key) throw Object.assign(new Error(), { code: -10002 });
@@ -135,4 +161,35 @@ test('uses the official Luna bridge and ignores platform error text', async t =>
   platform.fail('removeKey');
   await assert.rejects(store.clear(), { message: 'Protected Home Assistant storage is unavailable.' });
   assert.equal(await store.load(), null);
+});
+
+test('no plaintext token reaches storage across connect, reload and disconnect', async () => {
+  const platform = fakePlatform();
+  const token = 'plaintext-sentinel-token-0123456789';
+  const assertNoPlaintext = stage => {
+    for (const [id, value] of [...platform.writes, ...platform.records]) {
+      assert.ok(!String(value).includes(token) && !String(id).includes(token), `${stage} wrote the HA token to ${id}; store only the Keymanager3 envelope`);
+      assert.ok(!String(value).includes('homeassistant.local'), `${stage} wrote the HA URL in plaintext to ${id}`);
+    }
+  };
+  await createHACredentialStore(platform).save({ ...credentials, token });
+  assertNoPlaintext('connect');
+  const reloaded = createHACredentialStore(platform);
+  assert.equal((await reloaded.load()).token, token);
+  assertNoPlaintext('reload');
+  await reloaded.clear();
+  assertNoPlaintext('disconnect');
+  assert.equal(platform.records.size, 0);
+  assert.equal(await createHACredentialStore(platform).load(), null);
+});
+
+test('the fake Keymanager3 rejects parameters LG does not accept', () => {
+  const platform = fakePlatform();
+  const aes = { type: 'AES', mode: ['GCM'], padding: ['None'] };
+  return Promise.all([
+    assert.rejects(platform.request('generateKey', { name: 'k', params: { ...aes, size: 256, purpose: ['encrypt'], mac_length: '128' } }), /generateKey.params must not send mac_length/),
+    assert.rejects(platform.request('begin', { name: 'k', params: { ...aes, purpose: ['encrypt'] } }), /begin.params must send mac_length/),
+    assert.rejects(platform.request('finish', { handle: '1', data: '', extra: 1 }), /finish must not send extra/),
+    assert.rejects(platform.request('update', { handle: '1' }), /not used by the credential store/),
+  ]);
 });

@@ -1,23 +1,67 @@
 // From web/ with Node 24 and an installed recent Chromium or Chrome:
 //   pnpm install --frozen-lockfile
 //   pnpm run build:webos
-//   CHROMIUM=/path/to/chromium node webos/acceptance.mjs
-// CHROMIUM defaults to chromium on PATH. The test serves the packaged dist/
+//   pnpm run test:acceptance
+// The browser is, in order: $CHROMIUM, the newest $HOME/.t3/tools/chrome-headless-shell
+// (with $HOME/.t3/chrome-libs on LD_LIBRARY_PATH when present), then chromium,
+// chromium-browser, google-chrome or google-chrome-stable on PATH. The test serves the packaged dist/
 // (the input to ares-package) on loopback and uses a disposable browser profile.
 // It imports an unlinked plan in the UI and requires no TV or Home Assistant.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { constants, existsSync, readdirSync } from 'node:fs';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { delimiter, extname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const dist = new URL('../dist/', import.meta.url);
 const html = await readFile(new URL('index.html', dist), 'utf8');
 assert.match(html, /src="\.\/webostv\/webOSTV.js"/, 'Run pnpm run build:webos first');
 for (const file of ['appinfo.json', 'webostv/webOSTV.js']) await readFile(new URL(file, dist));
+
+async function executable(path) {
+  return access(path, constants.X_OK).then(() => true, () => false);
+}
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
+
+export async function findChromium(env = process.env) {
+  if (env.CHROMIUM) return { command: env.CHROMIUM, env };
+  const home = env.HOME || homedir();
+  const shells = join(home, '.t3', 'tools', 'chrome-headless-shell');
+  if (existsSync(shells)) {
+    const candidates = [];
+    for (const entry of readdirSync(shells, { recursive: true, withFileTypes: true })) {
+      const path = join(entry.parentPath, entry.name);
+      const version = /(?:^|[\\/])(\d+(?:\.\d+){1,3})(?:[\\/]|$)/.exec(path.slice(shells.length))?.[1];
+      if (entry.name === 'chrome-headless-shell' && !entry.isDirectory() && version && await executable(path)) {
+        candidates.push({ path, version });
+      }
+    }
+    candidates.sort((a, b) => compareVersions(b.version, a.version));
+    if (candidates.length) {
+      const libs = join(home, '.t3', 'chrome-libs');
+      const libraryPath = existsSync(libs) ? [libs, env.LD_LIBRARY_PATH].filter(Boolean).join(delimiter) : env.LD_LIBRARY_PATH;
+      return { command: candidates[0].path, env: { ...env, ...(libraryPath ? { LD_LIBRARY_PATH: libraryPath } : {}) } };
+    }
+  }
+  for (const name of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
+    for (const dir of (env.PATH || '').split(delimiter).filter(Boolean)) {
+      if (await executable(join(dir, name))) return { command: join(dir, name), env };
+    }
+  }
+  throw new Error('No Chromium found. Fix: set CHROMIUM=/path/to/chromium, or install chromium or google-chrome on PATH.');
+}
 
 const plan = {
   version: 1,
@@ -167,6 +211,30 @@ async function exercise({ send, events }, url, fixture) {
 
   await until('bundled demo and initial room focus', async () =>
     await textIs('#status', 'Demo · no real devices') && await focusIs('Whole home'));
+
+  // webOS hides the app on Home and resumes it later. Demo must come back ready, not
+  // offline (a9eeab9). Override document.hidden because headless Chromium never hides.
+  const demoReady = `(() => { const s = document.querySelector('#status');
+    return s.textContent.trim() === 'Demo · no real devices' && !s.classList.contains('offline'); })()`;
+  assert.ok(await evaluate(demoReady), 'Expected the demo status to start ready');
+  const setHidden = hidden => evaluate(`(() => {
+    if (${hidden}) {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    } else {
+      delete document.hidden;
+      delete document.visibilityState;
+    }
+    document.dispatchEvent(new Event('visibilitychange'));
+    return document.hidden === ${hidden};
+  })()`);
+  assert.ok(await setHidden(true), 'Could not emulate a hidden page');
+  await until('demo paused while hidden', () => evaluate(
+    `document.querySelector('#status').textContent.includes('in the background')`,
+  ));
+  assert.ok(await setHidden(false), 'Could not emulate a visible page');
+  await until('demo status ready after resume (green, not offline)', () => evaluate(demoReady));
+  await focusIs('Whole home') || await evaluate(`document.querySelector('[data-room="all"]').focus()`);
   assert.ok(await evaluate(`[...document.querySelectorAll('button')].some(button => {
     if (button.textContent.trim() !== 'Sync & connect' || !button.checkVisibility()) return false;
     button.click();
@@ -274,12 +342,16 @@ try {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
-  browser = spawn(process.env.CHROMIUM || 'chromium', [
+  const chromium = await findChromium();
+  console.log(`Chromium: ${chromium.command}`);
+  browser = spawn(chromium.command, [
+    // CI runners restrict unprivileged user namespaces, which Chrome's sandbox needs.
+    ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
     '--headless', '--ozone-platform=headless', '--no-first-run', '--disable-background-networking', '--disable-component-update',
     '--proxy-server=http://127.0.0.1:1', '--remote-debugging-address=127.0.0.1',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  ], { stdio: ['ignore', 'ignore', 'pipe'], env: chromium.env });
   exited = new Promise(resolve => browser.once('close', resolve));
   let launchError;
   browser.on('error', error => { launchError = error; });
@@ -297,7 +369,7 @@ try {
   assert.ok(page, 'Expected a blank tab in the disposable Chromium profile');
   cdp = await connect(page.webSocketDebuggerUrl);
   await exercise(cdp, url, fixture);
-  console.log('PASS packaged webOS UI: SwiftShader render, room and floor navigation, Back, simulated light');
+  console.log('PASS packaged webOS UI: demo ready after hide/resume, SwiftShader render, room and floor navigation, Back, simulated light');
 } catch (error) {
   if (stderr) console.error(stderr.trim());
   throw error;

@@ -42,6 +42,13 @@ window.__tvReply = (id, response) => {
   pending.delete(id); clearTimeout(p.timer);
   if (response.error) p.reject(new Error(response.error)); else p.resolve(response);
 };
+/**
+ * Paths listed in WebOSRequestBodies must send exactly that body shape.
+ * @template {string} P
+ * @param {P} path
+ * @param {P extends keyof import('./webos.js').WebOSRequestBodies ? import('./webos.js').WebOSRequestBodies[P] : object} [body]
+ * @returns {Promise<any>}
+ */
 export async function api(path, body) {
   if (webosDemo) return webosAPI(path, body);
   if (native) return new Promise((resolve, reject) => {

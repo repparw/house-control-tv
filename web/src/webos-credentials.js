@@ -1,15 +1,39 @@
 import { haURL } from './webos-ha.js';
 
+/**
+ * Keymanager3 parameters, per method. LG rejects unknown keys, so each shape is exact:
+ * GCM's `mac_length` belongs to `begin` only, and `generateKey` fails on real TVs if it
+ * is present (b8fbe50).
+ * @typedef {{ type: 'AES', mode: ['GCM'], padding: ['None'], mac_length?: never }} AesKeySpec
+ * @typedef {'encrypt' | 'decrypt'} KeyPurpose
+ * @typedef {Omit<AesKeySpec, 'mac_length'> & { size: 256, purpose: KeyPurpose[], mac_length?: never }} GenerateKeyParams
+ * @typedef {Omit<AesKeySpec, 'mac_length'> & { purpose: [KeyPurpose], mac_length: '128', iv?: string }} BeginParams
+ * @typedef {{
+ *   generateKey: { name: string, params: GenerateKeyParams },
+ *   begin: { name: string, params: BeginParams },
+ *   finish: { handle: string, data: string },
+ *   abort: { handle: string },
+ *   removeKey: { name: string },
+ * }} KeymanagerParameters
+ * @typedef {{ returnValue?: boolean, handle?: unknown, iv?: string, output?: string, [key: string]: unknown }} KeymanagerResponse
+ * @typedef {<M extends keyof KeymanagerParameters>(method: M, parameters: KeymanagerParameters[M]) => Promise<KeymanagerResponse>} KeymanagerRequest
+ * @typedef {Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>} CredentialStorage
+ * @typedef {Error & { code?: number }} KeymanagerError
+ */
+
 const URI = 'luna://com.webos.service.keymanager3';
 const KEY = 'house-control-ha-aes-gcm-v1';
 const RECORD = 'house-control-ha-encrypted-v1';
+/** @type {AesKeySpec} */
 const AES = { type: 'AES', mode: ['GCM'], padding: ['None'] };
 const MAX_PAYLOAD = 8192;
 
+/** @returns {KeymanagerError} */
 function unavailable() {
   return new Error('Protected Home Assistant storage is unavailable.');
 }
 
+/** @type {KeymanagerRequest} */
 function requestKeymanager(method, parameters) {
   const service = globalThis.webOS?.service;
   if (!service?.request) throw unavailable();
@@ -66,6 +90,7 @@ function decode(value) {
   }
 }
 
+/** @param {{ request?: KeymanagerRequest, storage?: CredentialStorage }} [platform] */
 export function createHACredentialStore({ request = requestKeymanager, storage } = {}) {
   // Serialize writes, reads and removal so an in-flight save cannot undo a clear.
   let tail = Promise.resolve();
@@ -81,7 +106,13 @@ export function createHACredentialStore({ request = requestKeymanager, storage }
     return result;
   }
 
+  /**
+   * @param {KeyPurpose} purpose
+   * @param {string} data
+   * @param {string} [iv]
+   */
   async function crypt(purpose, data, iv) {
+    /** @type {BeginParams} */
     const params = { ...AES, purpose: [purpose], mac_length: '128' };
     if (iv !== undefined) params.iv = iv;
     const started = await request('begin', { name: KEY, params });

@@ -321,7 +321,7 @@ function setConnectionStatus(state, label, error = null) {
   };
   if (state !== 'connected') {
     for (const section of ['lights', 'acs']) {
-      for (const [id, deviceState] of Object.entries(home.state[section])) {
+      for (const deviceState of Object.values(home.state[section])) {
         if (!deviceState.provider) continue;
         if (deviceState.provider !== 'homeassistant' || deviceState.status === 'unsupported' || deviceState.status === 'invalid') continue;
         deviceState.online = false;
@@ -354,7 +354,7 @@ function queueReconnect(generation) {
       handleConnectionFailure(generation, error);
     }
   }, delay);
-  reconnectTimer.unref?.();
+  /** @type {any} */ (reconnectTimer).unref?.();
 }
 
 function handleConnectionFailure(generation, error) {
@@ -541,10 +541,11 @@ function valuesMatch(section, reading, patch) {
 }
 
 function linkedDiff(section, device, patch) {
-  const link = linkOf(device);
   const reading = currentReading(section, device);
   if (!reading?.online) throw new WebOSError(`${device.name} is unavailable in Home Assistant.`, 'ENTITY_UNAVAILABLE');
+  /** @type {Record<string, any>} */
   const actual = reading[section === 'lights' ? 'light' : 'ac'] || {};
+  /** @type {Record<string, any>} */
   const diff = {};
   if (patch.on === false) {
     if (actual.on !== false) diff.on = false;
@@ -865,7 +866,9 @@ function liveAction(body) {
   const config = normalize(home.plan);
   const light = id => config.lights.find(d => d.id === id);
   const ac = id => config.acs.find(d => d.id === id);
+  /** @type {{ section: 'lights' | 'acs', device: any, patch: Record<string, any>, refreshOnFailure?: boolean }[]} */
   let items = [];
+  /** @type {{ scene?: boolean, sceneId?: string | null }} */
   let options = {};
   if (body.kind === 'light' && light(body.id)) {
     if (typeof body.on !== 'boolean') throw new WebOSError('Expected an on/off value.', 'INVALID_ACTION');
@@ -952,6 +955,25 @@ async function importPlan(raw, confirmed) {
   return { ok: true, imported: preview, refreshError, home: structuredClone(home) };
 }
 
+/**
+ * Request bodies with a fixed contract. An import must carry the confirmation the UI
+ * collected; a bare plan is only a preview (7d3210d).
+ * @typedef {Record<string, unknown> & { plan?: never, confirm?: never }} RawPlan
+ * @typedef {{ plan: unknown, confirm: true }} ImportRequest
+ * @typedef {{
+ *   '/api/import': ImportRequest,
+ *   '/api/webos/plan/preview': { plan: unknown },
+ *   '/api/webos/ha/connect': { url: string, token: string },
+ *   '/api/webos/visibility': { visible: boolean },
+ * }} WebOSRequestBodies
+ */
+/**
+ * Paths listed in WebOSRequestBodies must send exactly that body shape.
+ * @template {string} P
+ * @param {P} path
+ * @param {P extends keyof WebOSRequestBodies ? WebOSRequestBodies[P] : object} [body]
+ * @returns {Promise<any>}
+ */
 export async function webosAPI(path, body) {
   await loadHome();
   if (path === '/api/home') return structuredClone(home);

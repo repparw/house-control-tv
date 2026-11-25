@@ -1,7 +1,7 @@
 name: webOS standalone
 on:
   push:
-    branches: ['webos/**']
+    branches: ['main', 'webos/**']
     tags: ['webos-v*']
   pull_request:
     paths: ['web/**', 'docs/webos.md', '.github/workflows/webos.yml']
@@ -22,8 +22,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: node --test webos/*.test.mjs
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
       - run: pnpm run build:webos
+      - run: pnpm run test:acceptance
       - run: npx --yes --package=@webos-tools/cli@3.2.6 ares-package dist --outdir ../.local/webos
       - uses: actions/upload-artifact@v4
         with:

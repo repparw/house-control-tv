@@ -1,3 +1,10 @@
+/**
+ * @param {{
+ *   connect: (credentials: { url: string, token: string }) => Promise<{ persisted?: boolean } | null | undefined>,
+ *   onConnected?: (result: { persisted?: boolean } | null | undefined) => unknown,
+ *   document?: Document,
+ * }} options
+ */
 export function createHASetupForm({ connect, onConnected = () => {}, document = globalThis.document }) {
   const form = document.createElement('form');
   form.className = 'login-form';
@@ -10,7 +17,9 @@ export function createHASetupForm({ connect, onConnected = () => {}, document = 
   const token = document.createElement('input');
   token.type = 'password';
 
-  for (const [caption, input] of [['Home Assistant URL', address], ['Long-lived access token', token]]) {
+  /** @type {[string, HTMLInputElement][]} */
+  const fields = [['Home Assistant URL', address], ['Long-lived access token', token]];
+  for (const [caption, input] of fields) {
     input.required = true;
     input.autocomplete = 'off';
     input.spellcheck = false;

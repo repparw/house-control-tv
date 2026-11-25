@@ -9,6 +9,7 @@ import { TV_RENDERER_OPTIONS, tvView } from './tv.js';
 
 export { STAGE_BG };
 
+/** @param {Record<string, any>} [options] */
 export function createWorld(canvas, config, store, options = {}) {
   const { presentationAspect = null, batchStatic: batch = batchStatic, ...rest } = options;
   const world = createSharedWorld(canvas, config, store, {

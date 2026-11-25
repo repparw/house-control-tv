@@ -45,6 +45,7 @@ export class HAConnection {
     this.nextId = 0;
     this.pending = new Map();
     this.connected = false;
+    /** @type {(state: any) => void} */
     this.onState = () => {};
     this.onDisconnect = () => {};
     this.subscriptionId = null;

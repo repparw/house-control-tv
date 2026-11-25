@@ -74,7 +74,7 @@ async function command(action) {
 function roomName(id) { return config.rooms.find(r => r.id === id)?.name || ''; }
 function selectRoom(id) {
   room = id; world?.focus(id === 'all' ? null : { kind: 'room', id });
-  for (const b of document.querySelectorAll('[data-room]')) { const selected = b.dataset.room === id; b.classList.toggle('selected', selected); b.setAttribute('aria-pressed', selected); }
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-room]'))) { const selected = b.dataset.room === id; b.classList.toggle('selected', selected); b.setAttribute('aria-pressed', String(selected)); }
   $('#room-title').textContent = id === 'all' ? 'Whole home' : roomName(id);
   renderDevices(); update();
 }
@@ -82,7 +82,7 @@ function renderDevices() {
   const list = $('#device-list'); list.replaceChildren(); lightNodes.clear(); acNodes.clear();
   const lights = config.lights.filter(d => deviceKind === 'lights' && (room === 'all' || d.room === room));
   const acs = config.acs.filter(d => deviceKind === 'acs' && (room === 'all' || d.room === room));
-  for (const b of document.querySelectorAll('[data-kind]')) { b.classList.toggle('selected', b.dataset.kind === deviceKind); b.setAttribute('aria-pressed', b.dataset.kind === deviceKind); }
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-kind]'))) { b.classList.toggle('selected', b.dataset.kind === deviceKind); b.setAttribute('aria-pressed', String(b.dataset.kind === deviceKind)); }
   $('#device-count').textContent = String(lights.length + acs.length);
   $('#all-off').hidden = deviceKind !== 'lights';
   if (!lights.length && !acs.length) list.append(el('p', 'empty', 'No devices in this category. Try another room or add devices in House Control.'));
@@ -319,6 +319,10 @@ async function openWebosDemo() {
       if (modal === connections && panel.isConnected) file.focus();
     }
   };
+  /**
+   * @param {import('./webos.js').RawPlan} payload
+   * @param {string} name
+   */
   function confirmImport(payload, name) {
     const confirmation = el('section', 'sync-panel');
     confirmation.tabIndex = -1;
@@ -524,7 +528,7 @@ if(!all.includes(current)){all[0]?.focus();return;}
 function back(){
   if(modal){closeModal();return true;}
   if(orbiting){orbiting=false;$('#orbit')?.classList.remove('active');return true;}
-  if(room!=='all'){selectRoom('all');document.querySelector('[data-room="all"]')?.focus();return true;}
+  if(room!=='all'){selectRoom('all');/** @type {HTMLElement | null} */ (document.querySelector('[data-room="all"]'))?.focus();return true;}
   return false;
 }
 window.tvBack=()=>{if(!back())window.HouseTV?.exit();};
