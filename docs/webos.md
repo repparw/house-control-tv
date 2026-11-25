@@ -45,7 +45,13 @@ Target webOS TV 24 and newer, where LG documents Keymanager3. The app owns an AE
 
 Phone QR provisioning needs an inbound LAN listener, which stock webOS does not support: LG Developer Support directs JS services to act as clients only. Enable phone provisioning only after demonstrating an authenticated, encrypted, local-only LAN path on unrooted hardware with session expiry, cancellation and listener shutdown. References: [LG Developer Support on opening a TCP port](https://forum.webostv.developer.lge.com/t/open-http-server/9585), [JS service guide](https://webostv.developer.lge.com/develop/guides/js-service-basics).
 
-## Later candidates
+## Product backlog
 
-- Native Home Assistant `scene` and `script` entities alongside House Control JSON scenes, without automatic execution on discovery.
-- Optional Luma Home-screen integration, discussed upstream with `ecklf/lg-luma`, with its own lifecycle.
+Follow-up items queued for the next product iteration:
+
+- **Show app version in UI:** expose the packaged `appinfo.json` version in Settings (matching Android TV's `bundle.appVersion` in About) so on-TV checks can confirm which build is running.
+- **Prevent OK-hold toggle storms and add long-press controls:** ignore repeated `keydown` (`event.repeat`) on focused device buttons so holding D-pad OK never spams toggles or trips "newer command" errors. Android TV currently has no hold-OK gesture either (`MainActivity.java` only intercepts `KEYCODE_MENU`), so define a long-press OK menu for lights (brightness, color temperature, RGB color).
+- **Consistent Home Assistant display names in errors and toasts:** use `displayName` (for example `Pieza`) rather than the floor-plan fallback (`Ceiling over sofa`) in command errors and conflict messages.
+- **Theme / dark mode setting:** add an explicit appearance option (`Auto` / `Dark` / `Light`) in Settings instead of relying only on `prefers-color-scheme` on webOS.
+- **Native Home Assistant `scene` and `script` entities:** surface alongside House Control JSON scenes, without automatic execution on discovery.
+- **Optional Luma Home-screen integration:** discussed upstream with `ecklf/lg-luma`, with its own lifecycle.
